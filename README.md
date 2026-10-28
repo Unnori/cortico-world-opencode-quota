@@ -16,6 +16,16 @@ Owner: `src/definition.ts`
 | `src/history.ts` | 额度历史的追加、趋势与裁剪 |
 | `src/ENV_PROMPT.md` | 进 system 前缀的那一段 |
 
+## 安装
+
+Coopanion 里:高级模式 →「扩展」→ 填包名 `cortico-world-opencode-quota`(可带版本,如 `cortico-world-opencode-quota@0.2.2`),装好重启进程,再到「World 总览」启用。改本地目录时,扩展页填包目录的绝对路径即可挂 link,改完源码同样是重启生效。
+
+- npm:https://www.npmjs.com/package/cortico-world-opencode-quota
+- 仓库:https://github.com/Unnori/cortico-world-opencode-quota
+- 许可证:MIT
+
+配套的供应商插件是 [`cortico-provider-opencode`](https://github.com/Unnori/cortico-provider-opencode);装了它并配好端点,这个 World 就不用再填密钥。
+
 ## 启用
 
 World 默认是关的。装好之后到**高级模式 → World 总览**把它激活;激活时立刻读一遍,之后按「读取间隔」轮询。
