@@ -1,0 +1,53 @@
+{
+  "name": "cortico-world-opencode-quota",
+  "version": "0.2.1",
+  "type": "module",
+  "description": "OpenCode Go 额度 World:读每个 OpenCode 端点的订阅额度(每 5 小时 / 每周 / 每月),把越线与重置报告给 bot,在 World 页显示三个窗口的进度,并保留一份可查的历史。密钥取自端点自己声明的环境变量名,也可以手填。",
+  "license": "MIT",
+  "author": "云纪",
+  "keywords": [
+    "cortico-world",
+    "cortico",
+    "coopanion",
+    "opencode",
+    "quota",
+    "usage"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.28.6",
+  "main": "./src/index.ts",
+  "cortico": {
+    "kind": "world",
+    "api": 6,
+    "icon": "icon.png",
+    "tags": [
+      "diagnostics"
+    ],
+    "describe": "describe.json",
+    "webUiClient": "dist/webui.js"
+  },
+  "files": [
+    "src",
+    "dist",
+    "icon.png",
+    "describe.json",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build:webui": "esbuild src/webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "typecheck:web": "tsc -p tsconfig.web.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "cortico": "^0.2.8",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
