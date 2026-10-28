@@ -5,6 +5,11 @@
   "description": "OpenCode Go 额度 World:读每个 OpenCode 端点的订阅额度(每 5 小时 / 每周 / 每月),把越线与重置报告给 bot,在 World 页显示三个窗口的进度,并保留一份可查的历史。密钥取自端点自己声明的环境变量名,也可以手填。",
   "license": "MIT",
   "author": "云纪",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Unnori/cortico-world-opencode-quota.git"
+  },
+  "homepage": "https://github.com/Unnori/cortico-world-opencode-quota#readme",
   "keywords": [
     "cortico-world",
     "cortico",
