@@ -10,7 +10,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-export const USER_AGENT = 'cortico-world-opencode-quota/0.2.2';
+export const USER_AGENT = 'cortico-world-opencode-quota/0.2.3';
 
 export interface EndpointRef {
   /** 端点名,即 `providers/<名>/` 的目录名。 */
