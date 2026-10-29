@@ -23,6 +23,10 @@ const HISTORY_FILE = 'opencode-quota-history.jsonl';
 /** 事件随其他事件合批投递:越线不值得打断正在进行的回答。 */
 const TRIGGER = 'debounce' as const;
 const RETAIN_DAYS = 14;
+/** 用量掉这么多才算窗口重置,避免把抖动当重置。 */
+const RESET_DROP = 5;
+/** 同一来源、同一窗口、同一类事件的最小间隔。 */
+const EVENT_COOLDOWN_MS = 30 * 60_000;
 
 /** 工具描述、事件正文与环境提示词都是给模型看的,按项目规矩只写英文;界面文案另由 webUi(language) 给。 */
 interface Text {
@@ -133,6 +137,7 @@ export class OpenCodeQuotaWorld implements World {
 
   private readonly history: History;
   private readonly previous: Previous = new Map();
+  private readonly lastEventAt = new Map<string, number>();
   private readonly latest = new Map<string, Usage>();
   private readonly failures = new Map<string, string>();
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -249,7 +254,7 @@ export class OpenCodeQuotaWorld implements World {
         const first = !this.failures.has(source.name);
         this.failures.set(source.name, reason);
         this.latest.delete(source.name);
-        if (first) await this.push('opencode-quota.unavailable', t.unavailable(source.name, reason));
+        if (first) await this.push('opencode-quota.unavailable', t.unavailable(source.name, reason), `${source.name}:unavailable`);
       }
     }
   }
@@ -263,18 +268,27 @@ export class OpenCodeQuotaWorld implements World {
       const previous = this.previous.get(key);
       this.previous.set(key, { percent: state.percent, resetsAt: state.resetsAt });
       if (!previous) continue;
-      if (previous.resetsAt !== state.resetsAt) {
-        await this.push('opencode-quota.reset', t.resetEvent(window, source.name));
+      // 窗口重置只认用量掉下来。空闲时 resetsAt 每分钟往后滑,拿它判断等于每次轮询都报一次重置。
+      if (previous.percent - state.percent >= RESET_DROP) {
+        await this.push('opencode-quota.reset', t.resetEvent(window, source.name), `${key}:reset`);
         continue;
       }
       if (previous.percent < threshold && state.percent >= threshold) {
-        await this.push('opencode-quota.threshold', t.thresholdEvent(window, source.name, state.percent, threshold));
+        await this.push('opencode-quota.threshold', t.thresholdEvent(window, source.name, state.percent, threshold), `${key}:threshold`);
       }
     }
   }
 
-  private async push(type: 'opencode-quota.threshold' | 'opencode-quota.reset' | 'opencode-quota.unavailable', body: string): Promise<void> {
+  private async push(
+    type: 'opencode-quota.threshold' | 'opencode-quota.reset' | 'opencode-quota.unavailable',
+    body: string,
+    key: string,
+  ): Promise<void> {
     if (!this.opts.cfg.notify || !this.host) return;
+    // 同一来源、同一窗口、同一类事件在冷却时间内只报一次:判断再出错也最多吵一次,不会连成串。
+    const now = Date.now();
+    if (now - (this.lastEventAt.get(key) ?? 0) < EVENT_COOLDOWN_MS) return;
+    this.lastEventAt.set(key, now);
     await this.host.pushEvent({
       type,
       ts: nowIso(this.opts.timezone),

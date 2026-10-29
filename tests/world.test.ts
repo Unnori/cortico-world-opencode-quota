@@ -204,15 +204,72 @@ describe('额度读取', () => {
     await instance.poll();                    // 仍在线以上,不重复报
     expect(host.events).toHaveLength(1);
 
-    // 只有每 5 小时那个窗口换了重置时刻:一个窗口一次重置。
+    // 只有每 5 小时那个窗口换了重置时刻,用量没变:空闲时 resetsAt 会往后滑,这不叫重置。
     payload = {
       usage: {
-        rolling: { status: 'ok', percent: 90, resetsAt: '2030-02-01T00:00:00.000Z' },
+        rolling: { status: 'ok', percent: 85, resetsAt: '2030-02-01T00:00:00.000Z' },
         weekly: { status: 'ok', percent: 10, resetsAt: '2030-01-01T00:00:00.000Z' },
         monthly: { status: 'ok', percent: 5, resetsAt: '2030-01-01T00:00:00.000Z' },
       },
     };
     await instance.poll();
+    expect(host.events).toHaveLength(1);
+
+    // 用量真的掉下来才算重置。
+    payload = {
+      usage: {
+        rolling: { status: 'ok', percent: 0, resetsAt: '2030-02-01T00:00:00.000Z' },
+        weekly: { status: 'ok', percent: 10, resetsAt: '2030-01-01T00:00:00.000Z' },
+        monthly: { status: 'ok', percent: 5, resetsAt: '2030-01-01T00:00:00.000Z' },
+      },
+    };
+    await instance.poll();
+    expect(host.events.map((event) => event.type)).toEqual(['opencode-quota.threshold', 'opencode-quota.reset']);
+    await instance.stop();
+  });
+
+  it('重置时刻每分钟往后滑时不报警——那次事故就是这么来的', async () => {
+    const botDir = deployment();
+    endpoint('demo', { kind: 'opencode', baseUrl: 'https://opencode.ai/inference/go/openai/v1', secret: 'CORTICO_KEY_DEMO' },
+      'CORTICO_KEY_DEMO=secret-value\n');
+    const host = new FakeHost();
+    const instance = world(botDir, { alertAt: 80 });
+    let minute = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
+      usage: {
+        // 百分比不动,重置时刻每分钟往前推一分钟。
+        rolling: { status: 'ok', percent: 0, resetsAt: new Date(Date.UTC(2030, 0, 1, 5, minute++)).toISOString() },
+        weekly: { status: 'ok', percent: 86, resetsAt: '2030-01-07T00:00:00.000Z' },
+        monthly: { status: 'ok', percent: 43, resetsAt: '2030-02-01T00:00:00.000Z' },
+      },
+    }), { status: 200 }));
+
+    await instance.start(host);
+    for (let index = 0; index < 5; index += 1) await instance.poll();
+    expect(host.events).toHaveLength(0);
+    await instance.stop();
+  });
+
+  it('同一窗口的同类事件在冷却时间内只报一次', async () => {
+    const botDir = deployment();
+    endpoint('demo', { kind: 'opencode', baseUrl: 'https://opencode.ai/inference/go/openai/v1', secret: 'CORTICO_KEY_DEMO' },
+      'CORTICO_KEY_DEMO=secret-value\n');
+    const host = new FakeHost();
+    const instance = world(botDir, { alertAt: 50 });
+    let payload = usage(10);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify(payload), { status: 200 }));
+
+    await instance.start(host);
+    payload = usage(60);
+    await instance.poll();                    // 越过 50,报一次
+    expect(host.events).toHaveLength(1);
+
+    payload = usage(5);
+    await instance.poll();                    // 掉下去:重置是另一类,报一次
+    expect(host.events).toHaveLength(2);
+
+    payload = usage(60);
+    await instance.poll();                    // 立刻又越线:同类事件在冷却内,不报
     expect(host.events.map((event) => event.type)).toEqual(['opencode-quota.threshold', 'opencode-quota.reset']);
     await instance.stop();
   });
