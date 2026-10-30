@@ -10,7 +10,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-export const USER_AGENT = 'cortico-world-opencode-quota/0.2.3';
+export const USER_AGENT = 'cortico-world-opencode-quota/0.2.4';
 
 export interface EndpointRef {
   /** 端点名,即 `providers/<名>/` 的目录名。 */
@@ -129,6 +129,17 @@ export function parseUsage(raw: unknown): Usage {
   return { rolling: windowOf(usage.rolling), weekly: windowOf(usage.weekly), monthly: windowOf(usage.monthly) };
 }
 
+/** 一次网络抖动不该变成一条事件:同一次请求再试一遍,仍失败才认。 */
+async function send(url: string, headers: Record<string, string>, signal?: AbortSignal): Promise<Response> {
+  try {
+    return await fetch(url, { headers, ...(signal ? { signal } : {}) });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return await fetch(url, { headers, ...(signal ? { signal } : {}) });
+  }
+}
+
 /**
  * 读一个端点的额度。密钥先按 `Authorization: Bearer` 发;被 401/403 拒时再试 `x-api-key`,因为
  * 网关的用量接口与推理接口不总是认同一个头。
@@ -138,7 +149,7 @@ export async function readUsage(endpoint: EndpointRef, key: string | undefined, 
   const variants: Array<Record<string, string>> = key ? [{ Authorization: `Bearer ${key}` }, { 'x-api-key': key }] : [{}];
   let last: Error | null = null;
   for (const auth of variants) {
-    const response = await fetch(usageUrl(endpoint.root), { headers: { ...headers, ...auth }, ...(signal ? { signal } : {}) });
+    const response = await send(usageUrl(endpoint.root), { ...headers, ...auth }, signal);
     const text = await response.text();
     if (response.ok) return parseUsage(JSON.parse(text));
     const detail = text.trim().slice(0, 160);

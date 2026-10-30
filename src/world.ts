@@ -254,7 +254,7 @@ export class OpenCodeQuotaWorld implements World {
         const first = !this.failures.has(source.name);
         this.failures.set(source.name, reason);
         this.latest.delete(source.name);
-        if (first) await this.push('opencode-quota.unavailable', t.unavailable(source.name, reason), `${source.name}:unavailable`);
+        if (first) await this.push('opencode-quota.unavailable', t.unavailable(source.name, reason), `${source.name}:unavailable`, false);
       }
     }
   }
@@ -279,12 +279,18 @@ export class OpenCodeQuotaWorld implements World {
     }
   }
 
+  /**
+   * 落一条事件。`deliver: false` 只入库、不进 bot 的上下文——读不到额度这类诊断属于这一种:
+   * 面板与事件库看得到,但不该叫醒 bot。越线与重置才进上下文,并受 `notify` 与冷却约束。
+   */
   private async push(
     type: 'opencode-quota.threshold' | 'opencode-quota.reset' | 'opencode-quota.unavailable',
     body: string,
     key: string,
+    deliver = true,
   ): Promise<void> {
-    if (!this.opts.cfg.notify || !this.host) return;
+    if (!this.host) return;
+    if (deliver && !this.opts.cfg.notify) return;
     // 同一来源、同一窗口、同一类事件在冷却时间内只报一次:判断再出错也最多吵一次,不会连成串。
     const now = Date.now();
     if (now - (this.lastEventAt.get(key) ?? 0) < EVENT_COOLDOWN_MS) return;
@@ -296,7 +302,7 @@ export class OpenCodeQuotaWorld implements World {
       origin: 'internal',
       senderKey: this.id,
       text: body,
-    }, { trigger: TRIGGER });
+    }, deliver ? { trigger: TRIGGER } : { trigger: TRIGGER, deliver: false });
   }
 
   /** 面板与徽标共用:只报已经轮询到的值,不联网。 */

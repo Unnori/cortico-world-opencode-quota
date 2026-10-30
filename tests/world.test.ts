@@ -304,6 +304,27 @@ describe('额度读取', () => {
     await instance.poll();
     expect(host.events.map((event) => event.type)).toEqual(['opencode-quota.unavailable']);
     expect(host.events[0]!.text).toContain('401');
+    // 诊断只入库:deliver=false,不进 bot 的上下文。
+    expect(host.pushOpts[0]?.deliver).toBe(false);
+    await instance.stop();
+  });
+
+  it('一次网络抖动不算失败:同一次请求再试一遍', async () => {
+    const botDir = deployment();
+    endpoint('demo', { kind: 'opencode', baseUrl: 'https://opencode.ai/inference/go/openai/v1', secret: 'CORTICO_KEY_DEMO' },
+      'CORTICO_KEY_DEMO=secret-value\n');
+    const host = new FakeHost();
+    const instance = world(botDir, { alertAt: 80 });
+    let attempt = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      attempt += 1;
+      if (attempt === 1) throw new TypeError('fetch failed');
+      return new Response(JSON.stringify(usage(12)), { status: 200 });
+    });
+    await instance.start(host);
+    expect(attempt).toBe(2);
+    expect(host.events).toHaveLength(0);
+    expect(instance.snapshot().sources[0]!.error).toBeNull();
     await instance.stop();
   });
 
