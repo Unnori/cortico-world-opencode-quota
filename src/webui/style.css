@@ -1,0 +1,1062 @@
+/* OpenCode 额度面板样式:全部类名以 .ocq- 为前缀,颜色与字号跟随 Cortico 主题 token,适配全部明暗配色。 */
+
+.ocq-root {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+}
+
+/* 顶部栏:标题 + 模式切换 + 刷新 */
+.ocq-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+
+.ocq-head {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ocq-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ocq-title {
+  margin: 0;
+  font: 600 17px/1.3 var(--sans);
+  color: var(--ink);
+  letter-spacing: -0.015em;
+}
+
+.ocq-head-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font: 500 11.5px/1.35 var(--sans);
+  color: var(--ink-soft);
+  background: var(--sheet-2);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.ocq-head-badge[hidden] {
+  display: none;
+}
+
+.ocq-subtitle {
+  margin: 0;
+  font: 13px/1.45 var(--sans);
+  color: var(--ink-dim);
+}
+
+.ocq-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+/* 复用框架分段切换器,补充细腻边框与柔和强调滑块,在全部明暗主题下对比清晰 */
+.ocq-controls .segwrap {
+  border: 1px solid var(--line-2);
+  background: var(--paper-2);
+  padding: 2px;
+  border-radius: 9px;
+  --seg-thumb: color-mix(in srgb, var(--accent) 18%, var(--sheet));
+}
+
+.ocq-controls .segwrap.sm .seg {
+  height: 26px;
+  padding: 0 11px;
+  font: 500 12.5px/26px var(--sans);
+  color: var(--ink-soft);
+  border-radius: 7px;
+}
+
+.ocq-controls .segwrap.sm .seg.active {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ocq-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  background: var(--sheet);
+  color: var(--ink-soft);
+  font: 500 12.5px/1 var(--sans);
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+
+.ocq-refresh:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--line-strong);
+  background: var(--sheet-2);
+}
+
+.ocq-refresh:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ocq-refresh:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ocq-refresh-ico {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.ocq-refresh.is-loading .ocq-refresh-ico {
+  animation: ocq-spin 0.85s linear infinite;
+}
+
+@keyframes ocq-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 状态消息行 */
+.ocq-root > .msgline {
+  margin: -6px 0 0;
+}
+
+/* Key 卡片列表 */
+.ocq-cards {
+  display: grid;
+  gap: 16px;
+}
+
+.ocq-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px 20px 20px;
+  border-radius: 14px;
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 12px var(--shadow-soft);
+  transition: border-color 180ms ease;
+}
+
+.ocq-card.is-warn,
+.ocq-card.is-limit,
+.ocq-card.is-error {
+  border-color: color-mix(in srgb, var(--danger) 36%, var(--line));
+}
+
+.ocq-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ocq-card-ident {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.ocq-card-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ocq-key-ico {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  flex: none;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--sheet-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.ocq-key-ico svg {
+  width: 13px;
+  height: 13px;
+}
+
+.ocq-card-title {
+  font: 600 14.5px/1.3 var(--sans);
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.ocq-key-hint {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font: 500 11.5px/1.25 var(--mono);
+  color: var(--ink-soft);
+  background: var(--sheet-2);
+  border: 1px solid var(--line);
+  letter-spacing: 0.03em;
+}
+
+.ocq-key-hint[hidden] {
+  display: none;
+}
+
+.ocq-providers {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 6px;
+}
+
+.ocq-providers[hidden] {
+  display: none;
+}
+
+.ocq-providers-label {
+  font: 11.5px/1.3 var(--sans);
+  color: var(--ink-dim);
+}
+
+.ocq-provider-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1.5px 8px;
+  border-radius: 999px;
+  font: 500 11.5px/1.3 var(--mono);
+  color: var(--ink-soft);
+  background: var(--sheet-2);
+  border: 1px solid var(--line);
+}
+
+.ocq-card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.ocq-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font: 500 11.5px/1.3 var(--sans);
+  border: 1px solid var(--line);
+  background: var(--sheet-2);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.ocq-status.is-ok {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 36%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, var(--sheet-2));
+}
+
+.ocq-status.is-mid {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, var(--sheet-2));
+}
+
+.ocq-status.is-warn,
+.ocq-status.is-limit,
+.ocq-status.is-error {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 42%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, var(--sheet-2));
+}
+
+.ocq-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.ocq-card-time {
+  font: 11.5px/1.2 var(--mono);
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.ocq-card-time[hidden] {
+  display: none;
+}
+
+/* 有缓存读数但最近一次刷新失败时的轻提示条 */
+.ocq-stale-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--warn) 10%, var(--sheet-2));
+  border: 1px solid color-mix(in srgb, var(--warn) 36%, var(--line));
+  color: var(--warn);
+  font: 12px/1.45 var(--sans);
+  word-break: break-word;
+}
+
+.ocq-stale-banner[hidden] {
+  display: none;
+}
+
+.ocq-stale-banner svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin-top: 2px;
+}
+
+/* 三列窗口指标卡 */
+.ocq-windows {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ocq-win {
+  display: grid;
+  gap: 11px;
+  align-content: start;
+  padding: 15px 16px 14px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--paper) 65%, var(--sheet-2));
+  border: 1px solid var(--line);
+  transition: border-color 160ms ease;
+}
+
+.ocq-win:hover {
+  border-color: var(--line-2);
+}
+
+.ocq-win.is-warn {
+  border-color: color-mix(in srgb, var(--danger) 36%, var(--line));
+  background: color-mix(in srgb, var(--danger) 5%, color-mix(in srgb, var(--paper) 65%, var(--sheet-2)));
+}
+
+.ocq-win.is-limit {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--line));
+  background: color-mix(in srgb, var(--danger) 8%, color-mix(in srgb, var(--paper) 65%, var(--sheet-2)));
+}
+
+.ocq-win-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ocq-win-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: 600 13px/1.3 var(--sans);
+  color: var(--ink-soft);
+}
+
+.ocq-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ok);
+}
+
+.ocq-win.is-mid .ocq-dot {
+  background: var(--warn);
+}
+
+.ocq-win.is-warn .ocq-dot,
+.ocq-win.is-limit .ocq-dot {
+  background: var(--danger);
+}
+
+.ocq-win-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1.5px 7px;
+  border-radius: 999px;
+  font: 500 11px/1.3 var(--sans);
+  color: var(--ink-dim);
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.ocq-win.is-warn .ocq-win-badge {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, var(--sheet));
+}
+
+.ocq-win.is-limit .ocq-win-badge {
+  color: var(--danger);
+  font-weight: 600;
+  border-color: color-mix(in srgb, var(--danger) 48%, transparent);
+  background: color-mix(in srgb, var(--danger) 14%, var(--sheet));
+}
+
+/* 主读数 + 辅助对照读数 */
+.ocq-win-metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ocq-win-val {
+  display: inline-flex;
+  align-items: baseline;
+  font: 700 28px/1.05 var(--sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+}
+
+.ocq-win.is-warn .ocq-win-val,
+.ocq-win.is-limit .ocq-win-val {
+  color: var(--danger);
+}
+
+.ocq-win-unit {
+  font: 500 15px/1 var(--sans);
+  color: var(--ink-dim);
+  margin-left: 1px;
+}
+
+.ocq-win-sub {
+  font: 11.5px/1.25 var(--mono);
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 进度条 + 告警线刻度 */
+.ocq-bar-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--sheet-3);
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+}
+
+.ocq-win.is-limit .ocq-bar-track {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
+}
+
+.ocq-bar-clip {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ocq-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: var(--ok);
+  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1), background-color 220ms ease;
+}
+
+.ocq-bar-fill.has-value {
+  min-width: 5px;
+}
+
+.ocq-win.is-mid .ocq-bar-fill {
+  background: var(--warn);
+}
+
+.ocq-win.is-warn .ocq-bar-fill,
+.ocq-win.is-limit .ocq-bar-fill {
+  background: var(--danger);
+}
+
+.ocq-bar-mark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink-soft) 52%, transparent);
+  transform: translateX(-50%);
+  cursor: help;
+  transition: left 320ms cubic-bezier(0.22, 1, 0.36, 1), background-color 180ms ease;
+}
+
+.ocq-bar-mark:hover {
+  background: var(--ink);
+}
+
+/* 重置倒计时 */
+.ocq-win-foot {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 12px/1.35 var(--sans);
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.ocq-win-foot svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  opacity: 0.78;
+}
+
+.ocq-win.is-limit .ocq-win-foot {
+  color: var(--danger);
+}
+
+/* =========================================================================
+   月度本地记录趋势与虚线预测面板(仿 OpenCode 官网风格,纯中文,明暗自适应)
+   ========================================================================= */
+
+.ocq-trend {
+  display: grid;
+  gap: 10px;
+  padding: 15px 16px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paper) 65%, var(--sheet-2));
+  border: 1px solid var(--line);
+}
+
+.ocq-trend[hidden] {
+  display: none;
+}
+
+.ocq-trend-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.ocq-trend-left {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ocq-trend-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ocq-trend-title {
+  font: 600 14.5px/1.3 var(--sans);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.ocq-trend-sub {
+  font: 12px/1.45 var(--sans);
+  color: var(--ink-dim);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.ocq-trend-pace {
+  color: var(--warn);
+  font-weight: 500;
+}
+
+.ocq-trend-pace.is-ok {
+  color: var(--ok);
+}
+
+.ocq-trend-pace.is-danger {
+  color: var(--danger);
+}
+
+.ocq-trend-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: none;
+}
+
+.ocq-zoom-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2.5px 9px;
+  border-radius: 999px;
+  font: 500 11px/1.3 var(--mono);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--sheet));
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, transparent);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.ocq-zoom-reset:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.ocq-zoom-reset[hidden] {
+  display: none;
+}
+
+.ocq-trend-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2.5px 9px;
+  border-radius: 999px;
+  font: 500 11px/1.3 var(--sans);
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, var(--sheet));
+  border: 1px solid color-mix(in srgb, var(--warn) 36%, transparent);
+  white-space: nowrap;
+  flex: none;
+}
+
+.ocq-dash-sample {
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  border-top: 2px dashed currentColor;
+}
+
+/* SVG 折线画布(支持滚轮缩放、左键拖动平移与悬停读数) */
+.ocq-chart-wrap {
+  position: relative;
+  width: 100%;
+  user-select: none;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+
+.ocq-chart-wrap.is-zoomed {
+  cursor: grab;
+  touch-action: none;
+}
+
+.ocq-chart-wrap.is-grabbing {
+  cursor: grabbing;
+}
+
+.ocq-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.ocq-hover-tip {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  z-index: 4;
+  pointer-events: none;
+  padding: 4px 9px;
+  border-radius: 7px;
+  background: var(--sheet);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 4px 14px var(--shadow-soft);
+  font: 11.5px/1.35 var(--mono);
+  color: var(--ink);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ocq-hover-tip[hidden] {
+  display: none;
+}
+
+.ocq-chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.ocq-chart-vgrid {
+  stroke: color-mix(in srgb, var(--line) 75%, transparent);
+  stroke-width: 1;
+}
+
+.ocq-chart-hover-line {
+  stroke: color-mix(in srgb, var(--ink-soft) 50%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.ocq-chart-hover-dot {
+  fill: var(--sheet);
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.ocq-chart-hover-dot.is-actual {
+  stroke: var(--ok);
+}
+
+.ocq-chart-hover-dot.is-forecast {
+  stroke: var(--warn);
+}
+
+.ocq-chart-hover-dot.is-gap {
+  stroke: var(--danger);
+}
+
+.ocq-chart-limit-line {
+  stroke: color-mix(in srgb, var(--ink-dim) 58%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.ocq-chart-limit-line.is-zero-hit {
+  stroke: color-mix(in srgb, var(--danger) 55%, transparent);
+}
+
+.ocq-chart-vguide {
+  stroke: color-mix(in srgb, var(--ink-dim) 34%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.ocq-chart-vguide.is-hit {
+  stroke: color-mix(in srgb, var(--warn) 55%, transparent);
+}
+
+.ocq-chart-ylabel {
+  fill: var(--ink-dim);
+  font: 11px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ocq-chart-leadin {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ok) 45%, transparent);
+  stroke-width: 1.4;
+  stroke-dasharray: 2 4;
+}
+
+.ocq-chart-actual {
+  fill: none;
+  stroke: var(--ok);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ocq-chart-forecast {
+  fill: none;
+  stroke: var(--warn);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ocq-chart-gap-band {
+  fill: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.ocq-chart-gap-label {
+  fill: var(--ink-dim);
+  font: 11px/1.2 var(--sans);
+}
+
+.ocq-chart-dot-actual {
+  fill: var(--sheet);
+  stroke: var(--ok);
+  stroke-width: 2.2;
+}
+
+.ocq-chart-dot-hit {
+  fill: var(--sheet);
+  stroke: var(--warn);
+  stroke-width: 2.2;
+}
+
+.ocq-chart-dot-hit.is-danger {
+  stroke: var(--danger);
+}
+
+.ocq-chart-dot-end {
+  fill: var(--sheet);
+  stroke: var(--warn);
+  stroke-width: 2;
+}
+
+.ocq-chart-callout {
+  fill: var(--warn);
+  font: 600 11.5px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.ocq-chart-callout.is-danger {
+  fill: var(--danger);
+}
+
+/* 底部时间轴胶囊条(仿 OpenCode 官网底部日期条) */
+.ocq-chart-axis {
+  position: relative;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  margin-top: 2px;
+}
+
+.ocq-axis-tick {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font: 11px/1 var(--mono);
+  color: var(--ink-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ocq-axis-tick.is-start {
+  transform: translate(0, -50%);
+}
+
+.ocq-axis-tick.is-end {
+  transform: translate(-100%, -50%);
+}
+
+.ocq-axis-tick.is-day {
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.ocq-axis-tick.is-hit {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.ocq-axis-tick.is-hit.is-danger {
+  color: var(--danger);
+}
+
+.ocq-zoom-hint {
+  color: var(--ink-dim);
+  opacity: 0.85;
+}
+
+/* 趋势图底栏:日均速率 + 图例 */
+.ocq-chart-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  padding-top: 2px;
+  font: 12px/1.4 var(--sans);
+  color: var(--ink-dim);
+}
+
+.ocq-chart-avg {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ocq-chart-avg strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ocq-chart-legend {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 11.5px;
+}
+
+.ocq-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.ocq-legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 0;
+  border-top: 2px solid var(--ok);
+}
+
+.ocq-legend-swatch.is-forecast {
+  border-top-style: dashed;
+  border-top-color: var(--warn);
+}
+
+.ocq-legend-swatch.is-limit {
+  border-top-style: dotted;
+  border-top-color: var(--ink-dim);
+}
+
+/* 卡片内错误 / 等待状态 */
+.ocq-error-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--sheet-2));
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--line));
+  color: var(--danger);
+  font: 13px/1.5 var(--sans);
+  word-break: break-word;
+}
+
+.ocq-error-box svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 2px;
+}
+
+.ocq-waiting {
+  padding: 20px 14px;
+  border-radius: 10px;
+  background: var(--sheet-2);
+  border: 1px dashed var(--line-2);
+  text-align: center;
+  font: 13px/1.5 var(--sans);
+  color: var(--ink-dim);
+}
+
+/* 无任何来源时的空态 */
+.ocq-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 36px 24px;
+  border-radius: 14px;
+  background: var(--sheet);
+  border: 1px dashed var(--line-2);
+  text-align: center;
+}
+
+.ocq-empty-ico {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 4px;
+  border-radius: 10px;
+  color: var(--ink-dim);
+  background: var(--sheet-2);
+  border: 1px solid var(--line);
+}
+
+.ocq-empty-ico svg {
+  width: 18px;
+  height: 18px;
+}
+
+.ocq-empty-title {
+  font: 600 14px/1.4 var(--sans);
+  color: var(--ink);
+}
+
+.ocq-empty-desc {
+  max-width: 460px;
+  font: 13px/1.55 var(--sans);
+  color: var(--ink-dim);
+}
+
+/* 底部元信息栏 */
+.ocq-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 2px 4px;
+  font: 12px/1.5 var(--sans);
+  color: var(--ink-dim);
+}
+
+.ocq-footer:empty {
+  display: none;
+}
+
+.ocq-foot-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ocq-foot-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+/* 响应式折叠 */
+@container webui-content (max-width: 680px) {
+  .ocq-windows {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 780px) {
+  .ocq-windows {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ocq-refresh.is-loading .ocq-refresh-ico {
+    animation: none;
+  }
+  .ocq-bar-fill,
+  .ocq-bar-mark {
+    transition: none;
+  }
+}

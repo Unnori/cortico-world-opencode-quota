@@ -17,34 +17,36 @@ export const OPENCODE_QUOTA: WorldDefinition<OpenCodeQuotaConfigSection> = {
   describe: {
     tools: describeTools(openCodeQuotaToolDecls(), {
       ocq_read: {
-        zh: '读 OpenCode 端点的订阅额度:三个窗口的百分比与重置时间。',
-        en: 'Reads the subscription allowance of OpenCode endpoints: each window\u2019s percentage and reset time.',
+        zh: '查询 OpenCode 订阅额度（5小时/周/月的已用与剩余比例及重置倒计时）。',
+        en: 'Reads OpenCode subscription usage and remaining percentages with reset countdowns.',
       },
       ocq_history: {
-        zh: '看最近记录的额度趋势:样本数、峰值与最新值。',
-        en: 'Recent allowance trend: sample count, peak and latest value.',
+        zh: '查询本地记录的近期额度峰值、最新值与月度日均消耗。',
+        en: 'Reads locally recorded quota peaks, latest values, and monthly burn pace.',
       },
     }),
     events: [
       {
         type: 'opencode-quota.threshold',
+        trigger: 'piggyback',
         description: {
-          zh: '某个额度窗口刚越过配置的告警线。',
-          en: 'An allowance window just crossed its configured threshold.',
+          zh: '某个额度窗口刚越过配置的告警线（默认 piggyback 静默搭便车，可在配置中切换投递规则）。',
+          en: 'An allowance window crossed the alert threshold (defaults to piggyback; configurable).',
         },
       },
       {
         type: 'opencode-quota.reset',
+        trigger: 'piggyback',
         description: {
-          zh: '某个额度窗口重置了(重置时刻变了)。',
-          en: 'An allowance window reset, which shows as a new reset time.',
+          zh: '某个额度窗口已重置刷新（默认 piggyback 静默搭便车，可在配置中切换投递规则）。',
+          en: 'An allowance window reset after a usage drop (defaults to piggyback; configurable).',
         },
       },
       {
         type: 'opencode-quota.unavailable',
         description: {
-          zh: '某个端点的额度从此读不到;同一个原因只报一次。',
-          en: 'An endpoint\u2019s allowance became unreadable; each reason is reported once.',
+          zh: '某个来源的额度读取失败（仅入库不唤醒 bot，同一来源只记录一次）。',
+          en: 'A source could not be read (archived only without waking the bot; recorded once per outage).',
         },
       },
     ],

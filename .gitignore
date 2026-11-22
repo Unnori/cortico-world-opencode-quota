@@ -2,5 +2,5 @@ node_modules/
 *.log
 *.tgz
 
-# dist/ is committed on purpose: the panel bundle is loaded from the installed package without a build
-# step, so a clone must contain dist/webui.js.
+# dist/ is committed on purpose: the panel bundle & stylesheet are loaded from the installed package
+# without a build step, so a clone must contain dist/webui.js and dist/webui.css.

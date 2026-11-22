@@ -14,8 +14,8 @@ checkout; `<dir>` is this package's directory.
   the Persona keeps the whole World from mounting, so keep new tools under it.
 - [ ] **Events**: every type this World pushes is declared in `describe.events`; a type pushed but not
   declared is logged and shown on the World page.
-- [ ] **Text for the model is English**: tool descriptions, event bodies and the environment prompt are
-  read by the bot, so they stay English. Only `webUi(language)` and the config groups are localized.
+- [ ] **Copy & metadata**: panel UI, config groups, tool descriptions, event bodies and `ENV_PROMPT.md`
+  are kept concise in Chinese; `package.json` `cortico.locales` and `describe.json` provide `zh`/`en` summaries for the market.
 - [ ] **Tags**: `cortico.tags` carries `diagnostics`, which is what this package is.
 - [ ] **CHANGELOG.md** has a `## <version>` section for the version being published.
 - [ ] **`os`**: none, the package is platform-independent.

@@ -1,8 +1,8 @@
 {
   "name": "cortico-world-opencode-quota",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "type": "module",
-  "description": "OpenCode Go 额度 World:读每个 OpenCode 端点的订阅额度(每 5 小时 / 每周 / 每月),把越线与重置报告给 bot,在 World 页显示三个窗口的进度,并保留一份可查的历史。密钥取自端点自己声明的环境变量名,也可以手填。",
+  "description": "OpenCode Go 订阅额度监控：按独立 API Key 去重合并、支持已用/剩余双模式一键切换、内置月度本地记录趋势与虚线预测图、默认 piggyback 低打扰事件投递。",
   "license": "MIT",
   "author": "云纪",
   "repository": {
@@ -29,12 +29,24 @@
   "cortico": {
     "kind": "world",
     "api": 6,
+    "displayName": "OpenCode 额度",
     "icon": "icon.png",
     "tags": [
       "diagnostics"
     ],
+    "locales": {
+      "zh": {
+        "displayName": "OpenCode 额度",
+        "description": "OpenCode Go 订阅额度监控面板与查询工具：实时展示每 5 小时 / 每周 / 每月额度与重置倒计时，支持「剩余额度 / 已用额度」一键切换、按独立 API Key 自动去重合并、基于本地记录的月度趋势与虚线预测图，以及默认 piggyback 低打扰（五模式可配）事件投递。"
+      },
+      "en": {
+        "displayName": "OpenCode Quota",
+        "description": "OpenCode Go subscription allowance monitor: live 5-hour, weekly, and monthly quota cards with one-click Remaining/Used display toggle, automatic deduplication per unique API key, local monthly usage/remaining trend & dashed forecast charts, and quiet piggyback event delivery (all 5 Cortico trigger modes configurable)."
+      }
+    },
     "describe": "describe.json",
-    "webUiClient": "dist/webui.js"
+    "webUiClient": "dist/webui.js",
+    "webUiStyle": "dist/webui.css"
   },
   "files": [
     "src",
@@ -46,7 +58,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build:webui": "esbuild src/webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui.js",
+    "build:webui": "esbuild src/webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui.js && esbuild src/webui/style.css --bundle --outfile=dist/webui.css",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "typecheck:web": "tsc -p tsconfig.web.json"
