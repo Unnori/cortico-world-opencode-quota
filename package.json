@@ -1,8 +1,8 @@
 {
   "name": "cortico-world-opencode-quota",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
-  "description": "OpenCode Go 订阅额度监控：按独立 API Key 去重合并、支持已用/剩余双模式一键切换、内置月度本地记录趋势与虚线预测图、默认 piggyback 低打扰事件投递。",
+  "description": "OpenCode Go 订阅额度监控：通过框架密钥隔离安全管理单/多把 API Key、支持已用/剩余双模式一键切换、内置可缩放月度趋势与虚线预测图、默认 piggyback 低打扰事件投递。",
   "license": "MIT",
   "author": "云纪",
   "repository": {
@@ -37,11 +37,11 @@
     "locales": {
       "zh": {
         "displayName": "OpenCode 额度",
-        "description": "OpenCode Go 订阅额度监控面板与查询工具：实时展示每 5 小时 / 每周 / 每月额度与重置倒计时，支持「剩余额度 / 已用额度」一键切换、按独立 API Key 自动去重合并、基于本地记录的月度趋势与虚线预测图，以及默认 piggyback 低打扰（五模式可配）事件投递。"
+        "description": "OpenCode Go 订阅额度监控面板与查询工具：通过 Cortico 框架安全存储（部署 .env）独立管理一把或多把 API Key 并自动去重，实时展示每 5 小时 / 每周 / 每月额度与重置倒计时，支持「剩余额度 / 已用额度」一键切换、可缩放月度趋势与虚线预测图，以及默认 piggyback 低打扰（五模式可配）事件投递。"
       },
       "en": {
         "displayName": "OpenCode Quota",
-        "description": "OpenCode Go subscription allowance monitor: live 5-hour, weekly, and monthly quota cards with one-click Remaining/Used display toggle, automatic deduplication per unique API key, local monthly usage/remaining trend & dashed forecast charts, and quiet piggyback event delivery (all 5 Cortico trigger modes configurable)."
+        "description": "OpenCode Go subscription allowance monitor: manages one or more API keys securely via Cortico deployment secrets (.env) with automatic deduplication, live 5-hour/weekly/monthly quota cards, one-click Remaining/Used display toggle, zoomable local monthly trend & dashed forecast charts, and quiet piggyback event delivery (all 5 Cortico trigger modes configurable)."
       }
     },
     "describe": "describe.json",

@@ -1,16 +1,9 @@
 /**
- * 认端点、取密钥、读额度。三件事都只碰本机与网关:
- *
- * - 端点是部署根下 `providers/<名>/config.json` 里 `kind === "opencode"` 的那几条。部署根取
- *   `CORTICO_HOME`,没有时取部署目录的父目录。
- * - 密钥按端点自己声明的变量名取:进程环境优先,其次该端点目录的 `.env`。这与供应商模块的规则
- *   一致,所以在这里不需要用户再输一次。
- * - 额度读 `<网关根>/go/v1/usage`。只有 Go 订阅有额度窗口,按量计费的端点(含按量 URL)跳过。
+ * OpenCode 额度网关客户端:校验网关地址、组装 `/go/v1/usage`、安全发请求并解析三个窗口。
+ * 本模块不读取文件系统、不访问其他供应商目录、不直接碰环境变量;密钥一律由 World 经框架 `ctx.secret()` 传入。
  */
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 
-export const USER_AGENT = 'cortico-world-opencode-quota/0.3.0';
+export const USER_AGENT = 'cortico-world-opencode-quota/0.3.1';
 
 /** 单次网关请求超时(毫秒)。 */
 export const REQUEST_TIMEOUT_MS = 15_000;
@@ -19,22 +12,11 @@ export const MAX_RESPONSE_BYTES = 64 * 1024;
 /** 首次网络抖动后的重试等待(毫秒)。 */
 const RETRY_DELAY_MS = 1_500;
 
-export interface EndpointRef {
-  /** 端点名,即 `providers/<名>/` 的目录名。 */
+export interface QuotaTarget {
+  /** 展示名(用于错误提示)。 */
   name: string;
-  /** 端点目录,`providers/<名>`。 */
-  dir: string;
-  /** 网关根,如 `https://opencode.ai/inference`;不是网关地址时为空串。 */
+  /** 规范化后的网关根,如 `https://opencode.ai/inference`。 */
   root: string;
-  /** 主密钥变量名,来自端点配置 `secret`;没有声明时为空串。 */
-  secretName: string;
-  /** 端点声明的全部密钥变量名(主 `secret` 在前,其次 `options.keys` 里的备用密钥名,去重)。 */
-  secretNames?: string[];
-}
-
-export interface ResolvedKey {
-  secretName: string;
-  key: string | undefined;
 }
 
 export interface WindowState {
@@ -51,14 +33,9 @@ export interface Usage {
 
 const MARKER = '/inference';
 
-/** 部署根下的共享端点目录。 */
-export function providersDir(botDir: string): string {
-  const home = process.env.CORTICO_HOME?.trim();
-  return join(home || dirname(botDir), 'providers');
-}
-
 /**
- * 从端点地址取网关根;仅接受 http/https 且不含内嵌账号密码的 OpenCode 网关地址,其余返回空串。
+ * 规范化 OpenCode 网关根:仅接受 http/https 且不含内嵌账号密码的地址,并截断至 `/inference`;
+ * 不符合条件时返回空串。
  */
 export function gatewayRoot(baseUrl: string): string {
   let url: URL;
@@ -70,109 +47,11 @@ export function gatewayRoot(baseUrl: string): string {
   return `${url.origin}${url.pathname.slice(0, at + MARKER.length)}`.replace(/\/+$/, '');
 }
 
-/**
- * 从端点 URL 推断计费账户类型:带 `/go` 为 Go 订阅,直接挂模型协议族路径(如 `/inference/openai/v1`)
- * 为 Console 按量余额;裸网关根返回 null(默认按 Go 处理)。
- */
-export function billingHintOf(baseUrl: string): 'go' | 'balance' | null {
-  if (!gatewayRoot(baseUrl)) return null;
-  const path = baseUrl.slice(baseUrl.indexOf(MARKER));
-  if (/(^|\/)go(\/|$)/.test(path)) return 'go';
-  if (/\/(openai\/v1|anthropic\/v1|google\/v1beta|v1\/models)(\/|$|\?)/.test(path)) return 'balance';
-  return null;
-}
-
-/** 端点目录里声明的 OpenCode Go 端点,按名字排序。 */
-export function readEndpoints(botDir: string): EndpointRef[] {
-  const dir = providersDir(botDir);
-  let names: string[];
-  try {
-    names = readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-  } catch {
-    return [];
-  }
-  const found: EndpointRef[] = [];
-  for (const name of names.sort()) {
-    const endpointDir = join(dir, name);
-    let config: Record<string, unknown>;
-    try {
-      config = JSON.parse(readFileSync(join(endpointDir, 'config.json'), 'utf8')) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    if (config.kind !== 'opencode') continue;
-    const baseUrl = String(config.baseUrl ?? '');
-    const root = gatewayRoot(baseUrl);
-    if (!root) continue;
-    // 额度窗口只对 Go 订阅有;显式按量计费或按量路径的端点跳过。
-    const options = (config.options ?? {}) as Record<string, unknown>;
-    const explicitBilling = typeof options.billing === 'string' ? options.billing.trim() : '';
-    const billing = explicitBilling || billingHintOf(baseUrl) || 'go';
-    if (billing === 'balance') continue;
-    const primarySecret = typeof config.secret === 'string' ? config.secret.trim() : '';
-    const extraListed = typeof options.keys === 'string' ? options.keys.split(/[;,\s]+/) : [];
-    const secretNames = [...new Set([primarySecret, ...extraListed].map((item) => item.trim()).filter(Boolean))];
-    found.push({
-      name,
-      dir: endpointDir,
-      root,
-      secretName: primarySecret,
-      ...(secretNames.length ? { secretNames } : {}),
-    });
-  }
-  return found;
-}
-
-/** 按变量名取密钥:进程环境优先,其次端点目录的 `.env`。 */
-export function readSecret(dir: string, secretName: string): string | undefined {
-  const name = secretName.trim();
-  if (!name) return undefined;
-  const fromEnv = process.env[name]?.trim();
-  if (fromEnv) return fromEnv;
-  if (!dir) return undefined;
-  let text: string;
-  try {
-    text = readFileSync(join(dir, '.env'), 'utf8');
-  } catch {
-    return undefined;
-  }
-  for (const line of text.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const at = trimmed.indexOf('=');
-    if (at < 0 || trimmed.slice(0, at).trim() !== name) continue;
-    const value = trimmed.slice(at + 1).trim().replace(/^(['"])(.*)\1$/, '$2').trim();
-    if (value) return value;
-  }
-  return undefined;
-}
-
-/** 按名字取主密钥:进程环境优先,其次端点目录的 `.env`。 */
-export function readKey(endpoint: EndpointRef): string | undefined {
-  return readSecret(endpoint.dir, endpoint.secretName);
-}
-
-/** 读取端点声明的全部可用密钥:主密钥始终返回(缺值时为 undefined),备用密钥只返回实际读到值的。 */
-export function readEndpointKeys(endpoint: EndpointRef): ResolvedKey[] {
-  const names = endpoint.secretNames?.length
-    ? endpoint.secretNames
-    : (endpoint.secretName ? [endpoint.secretName] : []);
-  if (!names.length) return [{ secretName: '', key: undefined }];
-  const [first, ...extras] = names;
-  const primary: ResolvedKey = { secretName: first!, key: readSecret(endpoint.dir, first!) };
-  const resolvedExtras: ResolvedKey[] = [];
-  for (const extraName of extras) {
-    const key = readSecret(endpoint.dir, extraName);
-    if (key) resolvedExtras.push({ secretName: extraName, key });
-  }
-  if (!primary.key && resolvedExtras.length) return resolvedExtras;
-  return [primary, ...resolvedExtras];
-}
-
-/** 安全脱敏的密钥尾标:仅在密钥足够长时保留末 4 位,永不泄露完整密钥。 */
+/** 安全脱敏的密钥尾标:仅在密钥足够长时保留末 4 位,短密钥全打码,永不泄露完整密钥。 */
 export function maskKeyHint(key: string | undefined): string | null {
   const trimmed = key?.trim() ?? '';
-  if (trimmed.length < 8) return null;
+  if (!trimmed) return null;
+  if (trimmed.length < 8) return '••••';
   return `••••${trimmed.slice(-4)}`;
 }
 
@@ -269,21 +148,21 @@ async function send(url: string, headers: Record<string, string>, signal?: Abort
 }
 
 /**
- * 读一个端点的额度。密钥先按 `Authorization: Bearer` 发;被 401/403 拒时再试 `x-api-key`,因为
- * 网关的用量接口与推理接口不总是认同一个头。
+ * 读取一把密钥对应的额度。先按 `Authorization: Bearer` 发;被 401/403 拒时再试 `x-api-key`,
+ * 因为网关的用量接口与推理接口不总是认同一个头。
  */
-export async function readUsage(endpoint: EndpointRef, key: string | undefined, signal?: AbortSignal): Promise<Usage> {
+export async function readUsage(target: QuotaTarget, key: string | undefined, signal?: AbortSignal): Promise<Usage> {
   const headers: Record<string, string> = { Accept: 'application/json', 'User-Agent': USER_AGENT, 'x-opencode-session': crypto.randomUUID() };
   const variants: Array<Record<string, string>> = key ? [{ Authorization: `Bearer ${key}` }, { 'x-api-key': key }] : [{}];
   let last: Error | null = null;
   for (const auth of variants) {
-    const response = await send(usageUrl(endpoint.root), { ...headers, ...auth }, signal);
+    const response = await send(usageUrl(target.root), { ...headers, ...auth }, signal);
     const text = await readLimitedText(response, MAX_RESPONSE_BYTES);
     if (response.ok) return parseUsage(parseJsonSafe(text));
     const safeText = key ? text.replaceAll(key, '[redacted]') : text;
     const detail = safeText.trim().slice(0, 160);
-    last = new Error(`${endpoint.name}: HTTP ${response.status}${detail ? ` — ${detail}` : ''}`);
+    last = new Error(`${target.name}: HTTP ${response.status}${detail ? ` — ${detail}` : ''}`);
     if (!key || (response.status !== 401 && response.status !== 403)) break;
   }
-  throw last ?? new Error(`${endpoint.name}: 没有发出请求`);
+  throw last ?? new Error(`${target.name}: 没有发出请求`);
 }

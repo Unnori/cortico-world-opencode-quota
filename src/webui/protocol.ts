@@ -1,70 +1,78 @@
-/**
- * 面板与服务端之间的数据形状。两侧都 `import type`,打包时整段消失。
- */
-import type { DisplayMode, Window } from '../config.ts';
-import type { WindowState } from '../gateway.ts';
+/** 额度面板与 World 之间的数据面契约(两边只共享类型与常量)。 */
+import type { DisplayMode } from '../config.ts';
+import type { Usage } from '../gateway.ts';
 
-/** 本页唯一的自定义面板 id。服务端与浏览器端都从这里取,免得两处写同一个字符串。 */
 export const QUOTA_PANEL = 'quota';
 
-/** 月度趋势图里的单个历史采样点。 */
+/** 月度趋势图上的单个实测点。 */
 export interface MonthlyPoint {
-  /** 毫秒时间戳。 */
+  /** 采样时间戳(毫秒)。 */
   ts: number;
   /** 月度已用百分比(0–100)。 */
   used: number;
 }
 
-/** 基于本地记录推算出的月度用量曲线与线性预测。 */
+/** 单个独立 Key 在当前月度周期内的实测曲线与线性预测摘要。 */
 export interface MonthlySeries {
-  /** 本月计费周期起点(重置时刻往前推 1 个自然月,毫秒)。 */
+  /** 本月计费周期开始时间(毫秒,由重置时刻往前推一个自然月得到)。 */
   cycleStart: number;
-  /** 本月计费周期结束 / 重置时刻(毫秒)。 */
+  /** 本月计费周期结束/重置时间(毫秒)。 */
   cycleEnd: number;
-  /** 本次计算对应的当前时刻(毫秒)。 */
+  /** 本次快照生成时刻(毫秒)。 */
   now: number;
   /** 当前月度已用百分比(0–100)。 */
   currentUsed: number;
-  /** 实际记录折线点(按时间升序,末尾为此刻实测值)。 */
+  /** 当前周期内基于本地历史降采样后的实测点(按时间升序)。 */
   points: MonthlyPoint[];
-  /** 本周期内命中的本地历史条数。 */
+  /** 当前周期内本地历史实际命中的样本总数。 */
   sampleCount: number;
-  /** 周期至今的日均消耗(百分点/天)。 */
+  /** 按周期已过天数计算的日均消耗(百分点/天,保留 1 位小数)。 */
   dailyRate: number;
-  /** 按当前速度预计周期结束时的总消耗百分比(可超过 100%);无消耗或无预测时为 null。 */
+  /** 按当前速度推算到周期重置日的预测总用量百分比(可 >100%);样本不足或无消耗时为 null。 */
   projectedEndUsed: number | null;
-  /** 按当前速度预计触顶(已用 100% / 剩余 0%)的时刻(毫秒);周期内不会触顶或已耗尽时为 null。 */
+  /** 预测触顶(已用 100% / 剩余跌破 0%)的时间戳(毫秒);若周期内不会耗尽或已达 100% 则为 null。 */
   projectedHitAt: number | null;
 }
 
-/** 一把独立密钥对应的额度快照:共享这把 Key 的端点列表、脱敏尾标、三个窗口读数、月度趋势或失败原因。 */
-export interface SourceSnapshot {
-  name: string;
-  /** 共享这把 Key 的 OpenCode Provider 端点名(手填模式为空数组)。 */
-  endpoints: string[];
-  /** 安全脱敏的密钥尾标(仅末 4 位,如 `••••a1b2`),永不含完整密钥。 */
+/** 密钥管理列表里的单个槽位状态(只下发脱敏尾标,绝不下发明文密钥)。 */
+export interface ManagedKeyInfo {
+  /** 展示名称(如「主力账号」)。 */
+  label: string;
+  /** 存放在本部署 `.env` 中的环境变量名(如 `OPENCODE_QUOTA_KEY_1`)。 */
+  secret: string;
+  /** 脱敏后的密钥尾标(如 `••••8f3a`),未读到值时为 null。 */
   keyHint: string | null;
-  /** 网关根地址。 */
+  /** 是否来自本部署 `.env` 的默认变量 `OPENCODE_QUOTA_API_KEY`(未显式登记在 `keys` 中)。 */
+  envDefault?: boolean;
+}
+
+export interface SourceSnapshot {
+  /** 主展示名(取合并槽位中的第一个名称)。 */
+  name: string;
+  /** 共享这把实际 Key 的全部槽位名称(去重合并后列出)。 */
+  labels: string[];
+  /** 对应的环境变量名列表。 */
+  secrets: string[];
+  /** 脱敏后的密钥尾标(如 `••••a1b2`),绝不泄露完整密钥。 */
+  keyHint: string | null;
   gateway: string;
-  /** 上次成功读到这个来源的时刻;还没读到过时为 null。 */
   readAt: string | null;
-  /** 最近一次读取失败的原因;正常时为 null。有缓存读数时与 windows 共存,用于提示过期缓存。 */
   error: string | null;
-  windows: Record<Window, WindowState> | null;
-  /** 月度本地记录趋势与虚线预测;尚未读到月度窗口时为 null。 */
+  windows: Usage | null;
+  /** 当前月度周期的本地实测曲线与线性预测;尚未读到额度或重置时间无效时为 null。 */
   monthly: MonthlySeries | null;
 }
 
 export interface QuotaSnapshot {
-  /** 告警线,已用百分比。 */
   alertAt: number;
-  /** 轮询间隔,分钟。 */
   pollMinutes: number;
-  /** 本地历史保留天数。 */
+  /** 本地历史记录保留天数(7–365)。 */
   retainDays: number;
-  /** 当前展示模式:已用('used')或剩余('remaining')。 */
   displayMode: DisplayMode;
-  /** 去重前发现的 OpenCode Provider 端点总数。 */
-  totalEndpoints: number;
+  /** 当前规范化后的网关地址(无效时为空串)。 */
+  gateway: string;
+  /** 已登记的密钥槽位列表(用于面板内的密钥管理区,只含脱敏尾标)。 */
+  managedKeys: ManagedKeyInfo[];
+  /** 按独立 Key 去重合并后的监控来源列表(用于渲染额度卡片)。 */
   sources: SourceSnapshot[];
 }

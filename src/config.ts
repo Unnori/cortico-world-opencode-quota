@@ -1,8 +1,8 @@
 /**
  * `worlds.opencode-quota` 的配置段与配置组。默认禁用,由 bot 或部署启用。
  *
- * 只有一个组:读取间隔、告警线、事件推送开关、额度刷新/越线投递规则、显示模式、网关地址与可选手填密钥。
- * 手填密钥优先于端点自己的;清空它就回到读端点密钥——这样不装供应商插件也能单独当监控用。
+ * 密钥不存进 `config.json`:本 World 仅在 `keys` 里记录展示名与部署 `.env` 变量名,
+ * 实际 API Key 一律经由框架 `ctx.storeSecret()` 写入本部署 `.env`、经 `ctx.secret()` 读取。
  */
 import type { ConfigGroup, TriggerMode } from 'cortico/core/types.ts';
 import type { Language } from 'cortico/core/language.ts';
@@ -40,12 +40,47 @@ export function normalizeRetainDays(value: unknown): number {
   return Math.max(MIN_RETAIN_DAYS, Math.min(MAX_RETAIN_DAYS, n));
 }
 
+/**
+ * 默认单 Key 环境变量名(供手动在本部署 `.env` 配置使用);
+ * 不复用 `OPENCODE_API_KEY`,避免与供应商端点的密钥变量互相覆盖。
+ */
+export const DEFAULT_SECRET_NAME = 'OPENCODE_QUOTA_API_KEY';
+
+/** 面板托管的多 Key 环境变量名前缀(`OPENCODE_QUOTA_KEY_1`、`OPENCODE_QUOTA_KEY_2`…)。 */
+export const KEY_SECRET_PREFIX = 'OPENCODE_QUOTA_KEY_';
+
+/** 合法的环境变量名格式(与框架 `storeSecret` 校验保持一致)。 */
+export const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export interface KeySlot {
+  /** 用户自定义的展示名称(如「主力账号」「备用 Key」),仅元信息、不含密钥。 */
+  label: string;
+  /** 存放在本部署 `.env` 中的环境变量名,只经 `ctx.secret()` / `ctx.storeSecret()` 读写。 */
+  secret: string;
+}
+
+export function normalizeKeySlots(raw: unknown): KeySlot[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: KeySlot[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as { label?: unknown; secret?: unknown };
+    const secret = typeof rec.secret === 'string' ? rec.secret.trim() : '';
+    if (!ENV_NAME_RE.test(secret) || seen.has(secret)) continue;
+    seen.add(secret);
+    const label = typeof rec.label === 'string' && rec.label.trim() ? rec.label.trim().slice(0, 40) : secret;
+    out.push({ label, secret });
+  }
+  return out;
+}
+
 export interface OpenCodeQuotaConfigSection {
   enabled: boolean;
-  /** 网关地址;没有供应商端点时用它。 */
+  /** OpenCode 网关地址,默认 https://opencode.ai/inference。 */
   baseUrl: string;
-  /** 手填密钥。填了就优先用它,清空则回到端点自己声明的密钥。 */
-  apiKey: string;
+  /** 本 World 托管的密钥槽位列表(只存展示名与 `.env` 变量名,绝不存明文密钥)。 */
+  keys: KeySlot[];
   /** 读额度的间隔,分钟。启动时定下。 */
   pollMinutes: number;
   /** 任一窗口到这个百分比就提醒。 */
@@ -65,7 +100,7 @@ export interface OpenCodeQuotaConfigSection {
 export const OPENCODE_QUOTA_DEFAULTS: OpenCodeQuotaConfigSection = {
   enabled: false,
   baseUrl: 'https://opencode.ai/inference',
-  apiKey: '',
+  keys: [],
   pollMinutes: 1,
   alertAt: 80,
   notify: true,
@@ -75,18 +110,12 @@ export const OPENCODE_QUOTA_DEFAULTS: OpenCodeQuotaConfigSection = {
   retainDays: DEFAULT_RETAIN_DAYS,
 };
 
-/** 手填的密钥,去空白后为空表示没有。 */
-export function manualKey(cfg: OpenCodeQuotaConfigSection): string | undefined {
-  const key = (cfg.apiKey ?? '').trim();
-  return key || undefined;
-}
-
 /** 网关地址,去空白后为空表示没填。 */
 export function configuredRoot(cfg: OpenCodeQuotaConfigSection): string {
   return (cfg.baseUrl ?? '').trim();
 }
 
-/** 唯一的配置组(纯中文文案)。 */
+/** 唯一的配置组(纯中文文案,不含明文密钥项;密钥在「额度」面板经框架 `.env` 安全管理)。 */
 export function openCodeQuotaConfigGroups(_language?: Language): ConfigGroup[] {
   const prefix = 'worlds.opencode-quota.';
   return [
@@ -96,7 +125,7 @@ export function openCodeQuotaConfigGroups(_language?: Language): ConfigGroup[] {
       schema: {
         type: 'object',
         title: 'OpenCode 额度',
-        description: '读取 OpenCode 订阅额度(每 5 小时 / 每周 / 每月)。已配置供应商端点时自动读取并按实际 Key 去重;未配置时可手填密钥。',
+        description: '读取 OpenCode Go 订阅额度(每 5 小时 / 每周 / 每月)。API Key 请在「额度」页签的密钥管理区添加(经框架写入本部署 .env,不落盘到 config.json)。',
         properties: {
           [`${prefix}pollMinutes`]: {
             type: 'integer',
@@ -155,14 +184,7 @@ export function openCodeQuotaConfigGroups(_language?: Language): ConfigGroup[] {
           [`${prefix}baseUrl`]: {
             type: 'string',
             title: '网关地址',
-            description: '没有供应商端点时读取此地址,默认为 OpenCode 官方网关。',
-            'x-hot': true,
-          },
-          [`${prefix}apiKey`]: {
-            type: 'string',
-            title: '手填 API Key',
-            description: '留空 = 读取端点声明的密钥;填写后优先使用该密钥(注意手填值保存在配置文件中,不像端点密钥那样存于独立 .env)。',
-            'x-warning': true,
+            description: 'OpenCode Go 网关地址,默认为官方地址 https://opencode.ai/inference。API Key 请在「额度」面板中管理。',
             'x-hot': true,
           },
         },

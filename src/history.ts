@@ -25,12 +25,20 @@ export interface Snapshot {
 }
 
 export interface SourceQuery {
-  /** 不可逆来源指纹(优先匹配)。 */
+  /** 不可逆来源指纹(单个或兼容多代的多个指纹,优先精确匹配)。 */
   keyId?: string;
-  /** 关联的端点名列表(用于向下兼容旧版无 keyId 的历史记录)。 */
+  keyIds?: readonly string[];
+  /** 关联的端点/展示名称列表(用于向下兼容旧版无 keyId 的历史记录)。 */
   endpoints: readonly string[];
   /** 返回趋势结果时的展示名(默认取 endpoints[0])。 */
   label?: string;
+  /**
+   * 当前月度计费周期的重置时刻(ISO 字符串):
+   * 用于自动找回 0.1.x–0.2.x 无 keyId 且名称变更的旧记录(按同订阅重置锚点精确归属,不串账号)。
+   */
+  monthlyResetsAt?: string;
+  /** 当前是否只有这一把监控中的 Key(仅用于缺 resets.monthly 的旧记录兜底收编)。 */
+  singleSource?: boolean;
 }
 
 export interface EndpointTrend {
@@ -73,16 +81,37 @@ const TRIM_INTERVAL_MS = 60 * 60_000;
 const MONTHLY_RESET_DROP = 5;
 /** 判定月度重置时刻发生实质变化的阈值(1 小时),忽略空闲期微小漂移。 */
 const MONTHLY_RESET_SHIFT_MS = 60 * 60_000;
+/** 判定同周期月度重置锚点一致的容差(2 小时,兼容轻微时钟/接口偏移)。 */
+const SAME_CYCLE_RESET_TOLERANCE_MS = 2 * 60 * 60_000;
+/** 判定历史跨月重置锚点一致的容差(26 小时,兼容夏令时与大小月边界)。 */
+const PRIOR_CYCLE_RESET_TOLERANCE_MS = 26 * 60 * 60_000;
 /** 折线图最大采样点数:保留足够细节以支撑滚轮放大查看单日/数小时曲线。 */
 const MAX_CHART_POINTS = 240;
 
-/** 将重置时刻往前推一个自然月(如 12月9日 → 11月9日),防止月末日期溢出。 */
-export function subtractOneMonth(endMs: number): number {
+/** 将重置时刻往前推 `months` 个自然月(保持原锚点日并防止月末溢出)。 */
+function subtractMonths(endMs: number, months: number): number {
   const date = new Date(endMs);
   const day = date.getDate();
-  date.setMonth(date.getMonth() - 1);
+  date.setMonth(date.getMonth() - months);
   if (date.getDate() !== day) date.setDate(0);
   return date.getTime();
+}
+
+/** 将重置时刻往前推一个自然月(如 12月9日 → 11月9日),防止月末日期溢出。 */
+export function subtractOneMonth(endMs: number): number {
+  return subtractMonths(endMs, 1);
+}
+
+/** 判断某条无 keyId 旧记录的月度重置时刻是否属于当前订阅(本周期或前 12 个自然月锚点)。 */
+function matchesMonthlyResetAnchor(rowResetMs: number, currentResetMs: number): boolean {
+  if (Math.abs(rowResetMs - currentResetMs) <= SAME_CYCLE_RESET_TOLERANCE_MS) return true;
+  if (rowResetMs > currentResetMs + SAME_CYCLE_RESET_TOLERANCE_MS) return false;
+  for (let m = 1; m <= 12; m += 1) {
+    const anchor = subtractMonths(currentResetMs, m);
+    if (Math.abs(rowResetMs - anchor) <= PRIOR_CYCLE_RESET_TOLERANCE_MS) return true;
+    if (anchor < rowResetMs - PRIOR_CYCLE_RESET_TOLERANCE_MS) break;
+  }
+  return false;
 }
 
 function clampPercent(value: number): number {
@@ -95,19 +124,38 @@ function normalizeQuery(target: string | readonly string[] | SourceQuery): Sourc
   const query = target as SourceQuery;
   return {
     ...(query.keyId ? { keyId: query.keyId } : {}),
+    ...(query.keyIds?.length ? { keyIds: query.keyIds } : {}),
     endpoints: query.endpoints,
     label: query.label ?? query.endpoints[0] ?? '',
+    ...(query.monthlyResetsAt ? { monthlyResetsAt: query.monthlyResetsAt } : {}),
+    ...(query.singleSource ? { singleSource: true } : {}),
   };
 }
 
-/** 构造一条过滤函数:双方都有 keyId 时严格按指纹匹配(改名不断、换 Key 不串);旧行无 keyId 时按 endpoint 兼容。 */
+/**
+ * 构造一条过滤函数:
+ * 1. 双方都有 keyId 时严格按指纹集合匹配(支持 0.3.1 纯 Key 指纹与 0.3.0 旧指纹;改名/换网关不断档,换 Key 不串曲线);
+ * 2. 旧行无 keyId(0.1.x–0.2.x)时:先按名称兼容,名称不符再按月度重置锚点精确归属,防止升级改名后丢失旧数据。
+ */
 function rowMatcher(query: SourceQuery): (row: Snapshot) => boolean {
   const names = new Set(query.endpoints);
-  const keyId = query.keyId;
+  const keyIds = new Set<string>([
+    ...(query.keyId ? [query.keyId] : []),
+    ...(query.keyIds ?? []),
+  ]);
+  const curResetMs = query.monthlyResetsAt ? Date.parse(query.monthlyResetsAt) : NaN;
+  const hasCurReset = Number.isFinite(curResetMs);
+
   return (row: Snapshot) => {
-    if (keyId && row.keyId) return row.keyId === keyId;
-    if (keyId && !row.keyId) return names.has(row.endpoint);
-    return names.has(row.endpoint);
+    if (keyIds.size > 0 && row.keyId) return keyIds.has(row.keyId);
+    if (names.has(row.endpoint)) return true;
+    if (keyIds.size === 0 || row.keyId) return false;
+
+    const rowResetMs = row.resets?.monthly ? Date.parse(row.resets.monthly) : NaN;
+    if (hasCurReset && Number.isFinite(rowResetMs)) {
+      return matchesMonthlyResetAnchor(rowResetMs, curResetMs);
+    }
+    return Boolean(query.singleSource);
   };
 }
 
@@ -354,7 +402,10 @@ export class History {
     if (!Number.isFinite(cycleStart) || cycleStart >= cycleEnd) return null;
 
     const currentUsed = clampPercent(currentUsedRaw);
-    const query = normalizeQuery(target);
+    const baseQuery = normalizeQuery(target);
+    const query: SourceQuery = !baseQuery.monthlyResetsAt && (baseQuery.keyId || baseQuery.keyIds?.length)
+      ? { ...baseQuery, monthlyResetsAt: resetsAtIso }
+      : baseQuery;
     const matches = rowMatcher(query);
     const rawRows = this.ensureLoaded()
       .filter((item) => item.tsMs >= cycleStart && item.tsMs <= nowMs && matches(item.row))

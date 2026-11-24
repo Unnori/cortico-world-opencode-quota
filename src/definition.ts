@@ -6,13 +6,15 @@ import { OpenCodeQuotaWorld, openCodeQuotaToolDecls } from './world.ts';
 export const OPENCODE_QUOTA: WorldDefinition<OpenCodeQuotaConfigSection> = {
   id: 'opencode-quota',
   label: 'OpenCode 额度',
-  defaults: () => ({ ...OPENCODE_QUOTA_DEFAULTS }),
+  defaults: () => ({ ...OPENCODE_QUOTA_DEFAULTS, keys: [] }),
   create: (ctx) =>
     new OpenCodeQuotaWorld({
       cfg: ctx.cfg,
       timezone: ctx.timezone,
       dataDir: ctx.dataDir,
-      botDir: ctx.botDir,
+      secret: (name) => ctx.secret(name),
+      storeSecret: (name, value) => ctx.storeSecret(name, value),
+      persist: (patch) => ctx.persist(patch),
     }),
   describe: {
     tools: describeTools(openCodeQuotaToolDecls(), {

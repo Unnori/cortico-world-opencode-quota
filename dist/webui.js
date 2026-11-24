@@ -9,6 +9,7 @@ var SVG_NS = "http://www.w3.org/2000/svg";
 var HOUR_MS = 36e5;
 var DAY_MS = 864e5;
 var MIN_VIEW_SPAN_MS = 6 * HOUR_MS;
+var LEADIN_GAP_MS = 6 * HOUR_MS;
 var VIEW_W = 680;
 var VIEW_H = 176;
 var PAD_L = 46;
@@ -228,11 +229,17 @@ function evalSeriesAt(ts, monthly, showRemaining) {
   if (ts <= monthly.now) {
     const pts = monthly.points;
     let used2 = monthly.currentUsed;
+    let kind = "actual";
     if (pts.length > 0) {
-      if (ts <= pts[0].ts) {
+      if (ts < pts[0].ts) {
         const span = Math.max(1, pts[0].ts - monthly.cycleStart);
         const ratio2 = Math.max(0, Math.min(1, (ts - monthly.cycleStart) / span));
         used2 = pts[0].used * ratio2;
+        if (pts[0].ts - monthly.cycleStart > LEADIN_GAP_MS) {
+          kind = "leadin";
+        }
+      } else if (ts === pts[0].ts) {
+        used2 = pts[0].used;
       } else {
         let found = false;
         for (let i = 1; i < pts.length; i += 1) {
@@ -250,7 +257,7 @@ function evalSeriesAt(ts, monthly, showRemaining) {
     }
     const cleanUsed = clampPercent(used2);
     const cleanRem = clampPercent(100 - cleanUsed);
-    return { kind: "actual", used: cleanUsed, rem: cleanRem, plotYVal: showRemaining ? cleanRem : cleanUsed };
+    return { kind, used: cleanUsed, rem: cleanRem, plotYVal: showRemaining ? cleanRem : cleanUsed };
   }
   if (showRemaining && (monthly.currentUsed >= 100 || monthly.projectedHitAt !== null && ts > monthly.projectedHitAt)) {
     return { kind: "gap", used: 100, rem: 0, plotYVal: 0 };
@@ -620,7 +627,7 @@ var TrendChartView = class {
     const xStart = xOf(monthly.cycleStart);
     const yStart = yOf(startVal);
     const xEnd = xOf(monthly.cycleEnd);
-    if (pts.length > 0 && pts[0].ts - monthly.cycleStart > 6 * HOUR_MS) {
+    if (pts.length > 0 && pts[0].ts - monthly.cycleStart > LEADIN_GAP_MS) {
       plotG.append(svgEl("line", {
         x1: xStart,
         y1: yStart,
@@ -767,15 +774,23 @@ var TrendChartView = class {
       const info = evalSeriesAt(this.hoverTs, monthly, showRemaining);
       if (info && inPlotX(hx)) {
         const hy = yOf(info.plotYVal);
+        const isEstimated = info.kind !== "actual";
         plotG.append(svgEl("line", { x1: hx, y1: PAD_T, x2: hx, y2: yZero, class: "ocq-chart-hover-line" }));
-        plotG.append(svgEl("circle", { cx: hx, cy: hy, r: 4, class: `ocq-chart-hover-dot is-${info.kind}` }));
+        plotG.append(svgEl("circle", {
+          cx: hx,
+          cy: hy,
+          r: isEstimated ? 5 : 4,
+          class: `ocq-chart-hover-dot is-${info.kind}${isEstimated ? " is-dashed" : ""}`
+        }));
         const tsText = formatMDHM(this.hoverTs);
         if (info.kind === "gap") {
-          this.hoverTip.textContent = `${tsText} \xB7 \u7A7A\u6863\u671F\uFF08\u9884\u6D4B\u5DF2\u8017\u5C3D 0%\uFF09`;
+          this.hoverTip.textContent = `${tsText} \xB7 \u9884\u6D4B\u7A7A\u6863\u671F\uFF08\u9884\u8BA1\u5DF2\u8017\u5C3D 0% \xB7 \u9884\u6D4B\u503C\u975E\u5B9E\u6D4B\uFF09`;
+        } else if (isEstimated) {
+          this.hoverTip.textContent = showRemaining ? `${tsText} \xB7 \u9884\u6D4B\u5269\u4F59 ${formatPercent(info.rem)}%\uFF08\u5DF2\u7528 ${formatPercent(info.used)}% \xB7 \u9884\u6D4B\u503C\u975E\u5B9E\u6D4B\uFF09` : `${tsText} \xB7 \u9884\u6D4B\u5DF2\u7528 ${formatPercent(info.used)}%\uFF08\u5269 ${formatPercent(info.rem)}% \xB7 \u9884\u6D4B\u503C\u975E\u5B9E\u6D4B\uFF09`;
         } else {
-          const prefix = info.kind === "forecast" ? "\u9884\u6D4B" : "\u5B9E\u9645";
-          this.hoverTip.textContent = showRemaining ? `${tsText} \xB7 ${prefix}\u5269\u4F59 ${formatPercent(info.rem)}%\uFF08\u5DF2\u7528 ${formatPercent(info.used)}%\uFF09` : `${tsText} \xB7 ${prefix}\u5DF2\u7528 ${formatPercent(info.used)}%\uFF08\u5269 ${formatPercent(info.rem)}%\uFF09`;
+          this.hoverTip.textContent = showRemaining ? `${tsText} \xB7 \u5B9E\u9645\u5269\u4F59 ${formatPercent(info.rem)}%\uFF08\u5DF2\u7528 ${formatPercent(info.used)}%\uFF09` : `${tsText} \xB7 \u5B9E\u9645\u5DF2\u7528 ${formatPercent(info.used)}%\uFF08\u5269 ${formatPercent(info.rem)}%\uFF09`;
         }
+        this.hoverTip.className = isEstimated ? `ocq-hover-tip is-estimate is-${info.kind}` : "ocq-hover-tip";
         this.hoverTip.hidden = false;
         const pctX = hx / VIEW_W * 100;
         if (pctX > 56) {
@@ -818,10 +833,16 @@ var TrendChartView = class {
 function structureSignature(sources) {
   return sources.map((source) => [
     source.name,
-    source.endpoints.join(","),
+    source.labels.join(","),
     source.keyHint ?? "",
     source.windows ? "ok" : source.error ? "err" : "wait"
   ].join("|")).join("||");
+}
+function keysSignature(keys) {
+  return keys.map((k) => `${k.secret}|${k.label}|${k.keyHint ?? ""}|${k.envDefault ? "1" : "0"}`).join("||");
+}
+function errorText(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 var quotaPanel = {
   mount(ctx) {
@@ -829,9 +850,14 @@ var quotaPanel = {
     let snapshot = null;
     let displayMode = ctx.memo.get("displayMode", "used") === "remaining" ? "remaining" : "used";
     let busy = false;
+    let keySaving = false;
     let modeEpoch = 0;
     let renderedSig = "";
+    let renderedKeysSig = "";
     let renderedCards = [];
+    let keysPanelOpen = false;
+    let keysOpenTouched = false;
+    let editingSecret = null;
     const root = ui.h("div", "ocq-root");
     ctx.root.append(root);
     const toolbar = ui.h("div", "ocq-toolbar");
@@ -855,17 +881,243 @@ var quotaPanel = {
         onSelect: (value) => void switchDisplayMode(value === "remaining" ? "remaining" : "used")
       }
     );
+    const keysToggleBtn = ui.h("button", "ocq-keys-btn");
+    keysToggleBtn.type = "button";
+    const keysToggleLbl = ui.h("span", "", "\u7BA1\u7406\u5BC6\u94A5");
+    keysToggleBtn.append(keyIcon(), keysToggleLbl);
+    keysToggleBtn.addEventListener("click", () => {
+      keysOpenTouched = true;
+      keysPanelOpen = !keysPanelOpen;
+      if (!keysPanelOpen) editingSecret = null;
+      syncKeysVisibility();
+    }, { signal: ctx.signal });
     const refreshBtn = ui.h("button", "ocq-refresh");
     refreshBtn.type = "button";
     const refreshLbl = ui.h("span", "", "\u7ACB\u5373\u5237\u65B0");
     refreshBtn.append(refreshIcon(), refreshLbl);
     refreshBtn.addEventListener("click", () => void load("read"), { signal: ctx.signal });
-    controls.append(modeSwitch.el, refreshBtn);
+    controls.append(modeSwitch.el, keysToggleBtn, refreshBtn);
     toolbar.append(head, controls);
+    const keysPanel = ui.h("section", "ocq-keys-panel");
+    keysPanel.hidden = true;
+    const keysHead = ui.h("div", "ocq-keys-head");
+    const keysTitleWrap = ui.h("div", "ocq-keys-title-wrap");
+    keysTitleWrap.append(
+      ui.h("div", "ocq-keys-title", "OpenCode Go \u5BC6\u94A5\u7BA1\u7406"),
+      ui.h("div", "ocq-keys-desc", "\u5BC6\u94A5\u7531 Cortico \u6846\u67B6\u9694\u79BB\u4FDD\u5B58\u4E8E\u672C\u90E8\u7F72 .env\uFF08\u4EC5\u672C\u4EBA\u53EF\u8BFB\uFF09\uFF0C\u4E0D\u5199\u5165 config.json\uFF1B\u9875\u9762\u53EA\u5C55\u793A\u8131\u654F\u5C3E\u6807\u3002")
+    );
+    const keysCloseBtn = ui.h("button", "ocq-keys-close", "\u6536\u8D77");
+    keysCloseBtn.type = "button";
+    keysCloseBtn.addEventListener("click", () => {
+      keysOpenTouched = true;
+      keysPanelOpen = false;
+      editingSecret = null;
+      syncKeysVisibility();
+    }, { signal: ctx.signal });
+    keysHead.append(keysTitleWrap, keysCloseBtn);
+    const keyListBox = ui.h("div", "ocq-key-list");
+    keyListBox.hidden = true;
+    const addForm = ui.h("form", "ocq-key-form");
+    const addLabelInput = ui.h("input", "ocq-input ocq-input-name");
+    addLabelInput.type = "text";
+    addLabelInput.maxLength = 40;
+    addLabelInput.placeholder = "\u540D\u79F0\uFF08\u53EF\u9009\uFF0C\u5982 \u4E3B\u529B Key\uFF09";
+    addLabelInput.autocomplete = "off";
+    const addKeyInput = ui.h("input", "ocq-input ocq-input-secret");
+    addKeyInput.type = "password";
+    addKeyInput.placeholder = "\u7C98\u8D34 OpenCode Go API Key";
+    addKeyInput.autocomplete = "new-password";
+    addKeyInput.spellcheck = false;
+    const addSubmitBtn = ui.h("button", "ocq-btn-primary", "\u6DFB\u52A0\u5E76\u67E5\u8BE2");
+    addSubmitBtn.type = "submit";
+    addForm.append(addLabelInput, addKeyInput, addSubmitBtn);
+    addForm.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      void handleAddKey();
+    }, { signal: ctx.signal });
+    const keyMsg = ui.msgline();
+    keysPanel.append(keysHead, keyListBox, addForm, keyMsg);
     const message = ui.msgline();
     const cardsBox = ui.h("div", "ocq-cards");
     const footer = ui.h("div", "ocq-footer");
-    root.append(toolbar, message, cardsBox, footer);
+    root.append(toolbar, keysPanel, message, cardsBox, footer);
+    function showToast(text, tone) {
+      if (typeof ui.toast === "function") ui.toast(text, tone);
+    }
+    function setKeyNotice(text, bad = false) {
+      keyMsg.textContent = text;
+      keyMsg.classList.toggle("bad", bad);
+    }
+    function syncKeysVisibility() {
+      const count = snapshot?.managedKeys.length ?? 0;
+      keysPanel.hidden = !keysPanelOpen;
+      keysToggleBtn.classList.toggle("is-open", keysPanelOpen);
+      keysToggleBtn.setAttribute("aria-expanded", String(keysPanelOpen));
+      keysToggleLbl.textContent = count > 0 ? `\u7BA1\u7406\u5BC6\u94A5 (${count})` : "\u6DFB\u52A0\u5BC6\u94A5";
+      keysCloseBtn.hidden = count === 0;
+    }
+    function applySnapshot(nextSnap) {
+      snapshot = { ...nextSnap, displayMode };
+      if (!keysOpenTouched) {
+        keysPanelOpen = nextSnap.managedKeys.length === 0;
+      }
+      paintAll();
+    }
+    async function handleAddKey() {
+      if (keySaving) return;
+      const rawKey = addKeyInput.value.trim();
+      const rawLabel = addLabelInput.value.trim();
+      if (!rawKey) {
+        setKeyNotice("\u8BF7\u5148\u7C98\u8D34 OpenCode Go API Key\u3002", true);
+        addKeyInput.focus();
+        return;
+      }
+      keySaving = true;
+      addLabelInput.disabled = true;
+      addKeyInput.disabled = true;
+      addSubmitBtn.disabled = true;
+      addSubmitBtn.textContent = "\u4FDD\u5B58\u5E76\u8BFB\u53D6\u4E2D\u2026";
+      setKeyNotice("");
+      try {
+        const nextSnap = await ctx.invoke("addKey", [rawLabel, rawKey]);
+        if (ctx.signal.aborted) return;
+        addLabelInput.value = "";
+        addKeyInput.value = "";
+        keysOpenTouched = true;
+        keysPanelOpen = false;
+        editingSecret = null;
+        applySnapshot(nextSnap);
+        setKeyNotice("");
+        showToast("\u5DF2\u5B89\u5168\u5199\u5165\u672C\u90E8\u7F72 .env \u5E76\u5237\u65B0\u989D\u5EA6", "ok");
+        void ctx.refresh();
+      } catch (error) {
+        if (ctx.signal.aborted) return;
+        const text = errorText(error);
+        setKeyNotice(text, true);
+        showToast(text, "bad");
+      } finally {
+        keySaving = false;
+        if (!ctx.signal.aborted) {
+          addLabelInput.disabled = false;
+          addKeyInput.disabled = false;
+          addSubmitBtn.disabled = false;
+          addSubmitBtn.textContent = "\u6DFB\u52A0\u5E76\u67E5\u8BE2";
+        }
+      }
+    }
+    async function handleUpdateKey(secret, label, newKey) {
+      if (keySaving) return;
+      keySaving = true;
+      setKeyNotice("");
+      try {
+        const nextSnap = await ctx.invoke("updateKey", [secret, label, newKey]);
+        if (ctx.signal.aborted) return;
+        editingSecret = null;
+        renderedKeysSig = "";
+        applySnapshot(nextSnap);
+        showToast(newKey ? "\u5BC6\u94A5\u5DF2\u66F4\u65B0\u5E76\u5237\u65B0\u989D\u5EA6" : "\u540D\u79F0\u5DF2\u4FDD\u5B58", "ok");
+        void ctx.refresh();
+      } catch (error) {
+        if (ctx.signal.aborted) return;
+        const text = errorText(error);
+        setKeyNotice(text, true);
+        showToast(text, "bad");
+      } finally {
+        keySaving = false;
+      }
+    }
+    async function handleRemoveKey(info) {
+      if (keySaving) return;
+      let confirmed = true;
+      if (typeof ui.confirm === "function") {
+        confirmed = await ui.confirm({
+          title: `\u79FB\u9664\u5BC6\u94A5\u300C${info.label}\u300D\uFF1F`,
+          body: `\u5C06\u505C\u6B62\u76D1\u63A7\u73AF\u5883\u53D8\u91CF ${info.secret} \u5BF9\u5E94\u7684\u989D\u5EA6\uFF08\u672C\u5730\u5386\u53F2\u6587\u4EF6\u4FDD\u7559\uFF0C\u91CD\u65B0\u6DFB\u52A0\u540C\u628A Key \u53EF\u81EA\u52A8\u8854\u63A5\uFF09\u3002`,
+          danger: true
+        });
+      }
+      if (!confirmed || ctx.signal.aborted) return;
+      keySaving = true;
+      setKeyNotice("");
+      try {
+        const nextSnap = await ctx.invoke("removeKey", [info.secret]);
+        if (ctx.signal.aborted) return;
+        if (editingSecret === info.secret) editingSecret = null;
+        renderedKeysSig = "";
+        if (nextSnap.managedKeys.length === 0) {
+          keysOpenTouched = false;
+        }
+        applySnapshot(nextSnap);
+        showToast(`\u5DF2\u79FB\u9664\u300C${info.label}\u300D`, "ok");
+        void ctx.refresh();
+      } catch (error) {
+        if (ctx.signal.aborted) return;
+        const text = errorText(error);
+        setKeyNotice(text, true);
+        showToast(text, "bad");
+      } finally {
+        keySaving = false;
+      }
+    }
+    function paintKeyList(keys, force = false) {
+      const sig = `${keysSignature(keys)}#${editingSecret ?? ""}`;
+      if (!force && sig === renderedKeysSig) return;
+      renderedKeysSig = sig;
+      keyListBox.replaceChildren();
+      keyListBox.hidden = keys.length === 0;
+      if (!keys.length) return;
+      for (const info of keys) {
+        const item = ui.h("div", "ocq-key-row");
+        const main = ui.h("div", "ocq-key-row-main");
+        const infoCol = ui.h("div", "ocq-key-row-info");
+        infoCol.append(
+          ui.h("span", "ocq-key-row-label", info.label),
+          ui.h("span", "ocq-key-row-env", info.secret),
+          info.keyHint ? ui.h("span", "ocq-key-hint", info.keyHint) : ui.h("span", "ocq-key-missing", "\u672A\u8BFB\u5230\u503C"),
+          ...info.envDefault ? [ui.h("span", "ocq-key-env-tag", "\u6765\u81EA\u90E8\u7F72 .env")] : []
+        );
+        const acts = ui.h("div", "ocq-key-row-acts");
+        const isEditing = editingSecret === info.secret;
+        const editBtn = ui.h("button", "ocq-btn-sm", isEditing ? "\u53D6\u6D88" : "\u7F16\u8F91 / \u66F4\u6362");
+        editBtn.type = "button";
+        editBtn.addEventListener("click", () => {
+          editingSecret = isEditing ? null : info.secret;
+          setKeyNotice("");
+          paintKeyList(snapshot?.managedKeys ?? [], true);
+        }, { signal: ctx.signal });
+        acts.append(editBtn);
+        if (!info.envDefault) {
+          const rmBtn = ui.h("button", "ocq-btn-sm is-danger", "\u79FB\u9664");
+          rmBtn.type = "button";
+          rmBtn.addEventListener("click", () => void handleRemoveKey(info), { signal: ctx.signal });
+          acts.append(rmBtn);
+        }
+        main.append(infoCol, acts);
+        item.append(main);
+        if (isEditing) {
+          const editForm = ui.h("form", "ocq-key-edit");
+          const nameIn = ui.h("input", "ocq-input ocq-input-name");
+          nameIn.type = "text";
+          nameIn.maxLength = 40;
+          nameIn.value = info.label;
+          nameIn.placeholder = "\u663E\u793A\u540D\u79F0";
+          const keyIn = ui.h("input", "ocq-input ocq-input-secret");
+          keyIn.type = "password";
+          keyIn.placeholder = "\u7559\u7A7A\u4E0D\u6539\u5BC6\u94A5\uFF1B\u7C98\u8D34\u65B0 API Key \u5373\u66FF\u6362";
+          keyIn.autocomplete = "new-password";
+          keyIn.spellcheck = false;
+          const saveBtn = ui.h("button", "ocq-btn-primary", "\u4FDD\u5B58");
+          saveBtn.type = "submit";
+          editForm.append(nameIn, keyIn, saveBtn);
+          editForm.addEventListener("submit", (ev) => {
+            ev.preventDefault();
+            void handleUpdateKey(info.secret, nameIn.value.trim(), keyIn.value.trim());
+          }, { signal: ctx.signal });
+          item.append(editForm);
+        }
+        keyListBox.append(item);
+      }
+    }
     function setLoading(loading) {
       refreshBtn.disabled = loading;
       refreshBtn.classList.toggle("is-loading", loading);
@@ -898,19 +1150,17 @@ var quotaPanel = {
       const identRow = ui.h("div", "ocq-card-title-row");
       const icoWrap = ui.h("span", "ocq-key-ico");
       icoWrap.append(keyIcon());
-      const displayTitle = source.name === "manual" && source.endpoints.length === 0 ? "\u624B\u52A8\u914D\u7F6E Key" : source.name;
-      const cardTitle = ui.h("span", "ocq-card-title", displayTitle);
-      cardTitle.title = displayTitle;
+      const cardTitle = ui.h("span", "ocq-card-title", source.name);
+      cardTitle.title = source.name;
       const keyHint = ui.h("span", "ocq-key-hint", source.keyHint ?? "");
       keyHint.hidden = !source.keyHint;
       identRow.append(icoWrap, cardTitle, keyHint);
       ident.append(identRow);
-      const showProviders = source.endpoints.length > 1 || source.endpoints.length === 1 && source.endpoints[0] !== source.name;
-      if (showProviders) {
+      if (source.labels.length > 1) {
         const provRow = ui.h("div", "ocq-providers");
         provRow.append(ui.h("span", "ocq-providers-label", "\u5171\u7528\u6B64 Key"));
-        for (const ep of source.endpoints) {
-          provRow.append(ui.h("span", "ocq-provider-tag", ep));
+        for (const lbl of source.labels) {
+          provRow.append(ui.h("span", "ocq-provider-tag", lbl));
         }
         ident.append(provRow);
       }
@@ -925,7 +1175,7 @@ var quotaPanel = {
       card.append(cardHead);
       let staleBanner = null;
       let staleText = null;
-      let errorText = null;
+      let errorText2 = null;
       let trend = null;
       const tiles = [];
       if (source.windows) {
@@ -983,13 +1233,13 @@ var quotaPanel = {
         card.append(trend.el);
       } else if (source.error) {
         const errBox = ui.h("div", "ocq-error-box");
-        errorText = ui.h("span", "", `\u65E0\u6CD5\u8BFB\u53D6\u989D\u5EA6\uFF1A${source.error}`);
-        errBox.append(alertIcon(), errorText);
+        errorText2 = ui.h("span", "", `\u65E0\u6CD5\u8BFB\u53D6\u989D\u5EA6\uFF1A${source.error}`);
+        errBox.append(alertIcon(), errorText2);
         card.append(errBox);
       } else {
         card.append(ui.h("div", "ocq-waiting", "\u6B63\u5728\u7B49\u5F85\u9996\u6B21\u989D\u5EA6\u6570\u636E\u2026"));
       }
-      return { el: card, statusPill, statusText, timeEl, staleBanner, staleText, errorText, tiles, trend };
+      return { el: card, statusPill, statusText, timeEl, staleBanner, staleText, errorText: errorText2, tiles, trend };
     }
     function updateCard(refs, source, alertAt, cardIndex) {
       const remainingAlert = clampPercent(100 - alertAt);
@@ -1044,15 +1294,15 @@ var quotaPanel = {
     }
     function paintHeaderBadge(snap) {
       const keyCount = snap.sources.length;
-      const epCount = snap.totalEndpoints;
-      if (keyCount > 1 && epCount > keyCount) {
-        headBadge.textContent = `${epCount} \u4E2A Provider \u2192 ${keyCount} \u628A\u72EC\u7ACB Key`;
+      const slotCount = snap.managedKeys.length;
+      if (keyCount > 1 && slotCount > keyCount) {
+        headBadge.textContent = `${slotCount} \u4E2A\u6761\u76EE \u2192 ${keyCount} \u628A\u72EC\u7ACB Key`;
         headBadge.hidden = false;
       } else if (keyCount > 1) {
         headBadge.textContent = `\u5171 ${keyCount} \u628A\u72EC\u7ACB Key`;
         headBadge.hidden = false;
-      } else if (keyCount === 1 && epCount > 1) {
-        headBadge.textContent = `${epCount} \u4E2A Provider \u5171\u7528 1 \u628A Key`;
+      } else if (keyCount === 1 && slotCount > 1) {
+        headBadge.textContent = `${slotCount} \u4E2A\u6761\u76EE\u5171\u7528 1 \u628A Key`;
         headBadge.hidden = false;
       } else {
         headBadge.textContent = "";
@@ -1074,26 +1324,38 @@ var quotaPanel = {
         footer.append(ui.h("span", "ocq-foot-item", item));
       });
     }
-    function paintEmpty() {
-      renderedSig = "__empty__";
+    function paintEmpty(snap) {
+      const emptySig = snap.gateway ? "__empty_nokey__" : "__empty_nogw__";
+      if (renderedSig === emptySig) return;
+      renderedSig = emptySig;
       renderedCards = [];
       cardsBox.replaceChildren();
       const empty = ui.h("div", "ocq-empty");
       const ico = ui.h("div", "ocq-empty-ico");
       ico.append(keyIcon());
-      empty.append(
-        ico,
-        ui.h("div", "ocq-empty-title", "\u8FD8\u6CA1\u6709\u53EF\u76D1\u63A7\u7684 OpenCode Key"),
-        ui.h("div", "ocq-empty-desc", "\u914D\u7F6E\u4EFB\u610F OpenCode Go \u4F9B\u5E94\u5546\u7AEF\u70B9\uFF0C\u6216\u5728\u300C\u914D\u7F6E\u300D\u9875\u7B7E\u586B\u5199\u7F51\u5173\u5730\u5740\u4E0E API Key \u540E\u5373\u53EF\u5728\u6B64\u67E5\u770B\u989D\u5EA6\u3002")
-      );
+      if (!snap.gateway) {
+        empty.append(
+          ico,
+          ui.h("div", "ocq-empty-title", "\u7F51\u5173\u5730\u5740\u65E0\u6548"),
+          ui.h("div", "ocq-empty-desc", "\u8BF7\u5728\u300C\u914D\u7F6E\u300D\u9875\u7B7E\u68C0\u67E5 OpenCode \u7F51\u5173\u5730\u5740\uFF08\u9ED8\u8BA4 https://opencode.ai/inference\uFF09\u3002")
+        );
+      } else {
+        empty.append(
+          ico,
+          ui.h("div", "ocq-empty-title", "\u8FD8\u6CA1\u6709\u76D1\u63A7\u4E2D\u7684 OpenCode Go Key"),
+          ui.h("div", "ocq-empty-desc", "\u5728\u4E0A\u65B9\u5BC6\u94A5\u7BA1\u7406\u533A\u7C98\u8D34 OpenCode Go API Key \u5373\u53EF\u5F00\u59CB\u76D1\u63A7\uFF08\u4E5F\u53EF\u5728\u672C\u90E8\u7F72 .env \u4E2D\u76F4\u63A5\u914D\u7F6E OPENCODE_QUOTA_API_KEY\uFF09\u3002")
+        );
+      }
       cardsBox.append(empty);
     }
     function paintAll() {
       if (!snapshot) return;
+      syncKeysVisibility();
+      paintKeyList(snapshot.managedKeys);
       paintHeaderBadge(snapshot);
       const { sources, alertAt } = snapshot;
       if (!sources.length) {
-        paintEmpty();
+        paintEmpty(snapshot);
         footer.replaceChildren();
         return;
       }
@@ -1128,7 +1390,7 @@ var quotaPanel = {
         await ctx.refresh();
       } catch (error) {
         if (ctx.signal.aborted) return;
-        message.textContent = String(error);
+        message.textContent = errorText(error);
         message.classList.add("bad");
       }
     }
@@ -1146,13 +1408,12 @@ var quotaPanel = {
           ctx.memo.set("displayMode", displayMode);
           modeSwitch.setValue(displayMode);
         }
-        snapshot = { ...nextSnap, displayMode };
-        paintAll();
+        applySnapshot(nextSnap);
         message.textContent = "";
         if (method === "read") void ctx.refresh();
       } catch (error) {
         if (ctx.signal.aborted) return;
-        message.textContent = String(error);
+        message.textContent = errorText(error);
         message.classList.add("bad");
       } finally {
         busy = false;

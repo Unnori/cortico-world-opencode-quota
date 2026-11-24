@@ -8,7 +8,7 @@
  */
 import type { WebUiClientBundle, WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 import type { DisplayMode, Window } from '../config.ts';
-import { QUOTA_PANEL, type MonthlySeries, type QuotaSnapshot, type SourceSnapshot } from './protocol.ts';
+import { QUOTA_PANEL, type ManagedKeyInfo, type MonthlySeries, type QuotaSnapshot, type SourceSnapshot } from './protocol.ts';
 
 const WINDOWS: readonly Window[] = ['rolling', 'weekly', 'monthly'];
 const CONFIG_GROUP_ID = 'world:opencode-quota';
@@ -18,6 +18,8 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 const MIN_VIEW_SPAN_MS = 6 * HOUR_MS;
+/** 首条本地采样晚于周期起点超过该时长时,前段以引导虚线估算连接。 */
+const LEADIN_GAP_MS = 6 * HOUR_MS;
 
 const VIEW_W = 680;
 const VIEW_H = 176;
@@ -290,23 +292,30 @@ function buildAdaptiveTicks(
 }
 
 interface HoverEval {
-  kind: 'actual' | 'forecast' | 'gap';
+  /** actual=本地实测; leadin=首条记录前的引导估算虚线; forecast=未来预测虚线; gap=剩余模式下跌破 0% 后的预测空档期 */
+  kind: 'actual' | 'leadin' | 'forecast' | 'gap';
   used: number;
   rem: number;
   plotYVal: number;
 }
 
-/** 根据时间戳插值计算悬停处对应的实际/预测/空档值。 */
+/** 根据时间戳插值计算悬停处对应的实测 / 引导估算 / 预测 / 空档值。 */
 function evalSeriesAt(ts: number, monthly: MonthlySeries, showRemaining: boolean): HoverEval | null {
   if (ts < monthly.cycleStart || ts > monthly.cycleEnd) return null;
   if (ts <= monthly.now) {
     const pts = monthly.points;
     let used = monthly.currentUsed;
+    let kind: 'actual' | 'leadin' = 'actual';
     if (pts.length > 0) {
-      if (ts <= pts[0]!.ts) {
+      if (ts < pts[0]!.ts) {
         const span = Math.max(1, pts[0]!.ts - monthly.cycleStart);
         const ratio = Math.max(0, Math.min(1, (ts - monthly.cycleStart) / span));
         used = pts[0]!.used * ratio;
+        if (pts[0]!.ts - monthly.cycleStart > LEADIN_GAP_MS) {
+          kind = 'leadin';
+        }
+      } else if (ts === pts[0]!.ts) {
+        used = pts[0]!.used;
       } else {
         let found = false;
         for (let i = 1; i < pts.length; i += 1) {
@@ -324,7 +333,7 @@ function evalSeriesAt(ts: number, monthly: MonthlySeries, showRemaining: boolean
     }
     const cleanUsed = clampPercent(used);
     const cleanRem = clampPercent(100 - cleanUsed);
-    return { kind: 'actual', used: cleanUsed, rem: cleanRem, plotYVal: showRemaining ? cleanRem : cleanUsed };
+    return { kind, used: cleanUsed, rem: cleanRem, plotYVal: showRemaining ? cleanRem : cleanUsed };
   }
 
   // 预测区间 (ts > now)
@@ -757,7 +766,7 @@ class TrendChartView {
     const yStart = yOf(startVal);
     const xEnd = xOf(monthly.cycleEnd);
 
-    if (pts.length > 0 && pts[0]!.ts - monthly.cycleStart > 6 * HOUR_MS) {
+    if (pts.length > 0 && pts[0]!.ts - monthly.cycleStart > LEADIN_GAP_MS) {
       plotG.append(svgEl('line', {
         x1: xStart, y1: yStart, x2: pts[0]!.x, y2: pts[0]!.y,
         class: 'ocq-chart-leadin',
@@ -900,18 +909,28 @@ class TrendChartView {
       const info = evalSeriesAt(this.hoverTs, monthly, showRemaining);
       if (info && inPlotX(hx)) {
         const hy = yOf(info.plotYVal);
+        const isEstimated = info.kind !== 'actual';
         plotG.append(svgEl('line', { x1: hx, y1: PAD_T, x2: hx, y2: yZero, class: 'ocq-chart-hover-line' }));
-        plotG.append(svgEl('circle', { cx: hx, cy: hy, r: 4, class: `ocq-chart-hover-dot is-${info.kind}` }));
+        plotG.append(svgEl('circle', {
+          cx: hx,
+          cy: hy,
+          r: isEstimated ? 5 : 4,
+          class: `ocq-chart-hover-dot is-${info.kind}${isEstimated ? ' is-dashed' : ''}`,
+        }));
 
         const tsText = formatMDHM(this.hoverTs);
         if (info.kind === 'gap') {
-          this.hoverTip.textContent = `${tsText} · 空档期（预测已耗尽 0%）`;
-        } else {
-          const prefix = info.kind === 'forecast' ? '预测' : '实际';
+          this.hoverTip.textContent = `${tsText} · 预测空档期（预计已耗尽 0% · 预测值非实测）`;
+        } else if (isEstimated) {
           this.hoverTip.textContent = showRemaining
-            ? `${tsText} · ${prefix}剩余 ${formatPercent(info.rem)}%（已用 ${formatPercent(info.used)}%）`
-            : `${tsText} · ${prefix}已用 ${formatPercent(info.used)}%（剩 ${formatPercent(info.rem)}%）`;
+            ? `${tsText} · 预测剩余 ${formatPercent(info.rem)}%（已用 ${formatPercent(info.used)}% · 预测值非实测）`
+            : `${tsText} · 预测已用 ${formatPercent(info.used)}%（剩 ${formatPercent(info.rem)}% · 预测值非实测）`;
+        } else {
+          this.hoverTip.textContent = showRemaining
+            ? `${tsText} · 实际剩余 ${formatPercent(info.rem)}%（已用 ${formatPercent(info.used)}%）`
+            : `${tsText} · 实际已用 ${formatPercent(info.used)}%（剩 ${formatPercent(info.rem)}%）`;
         }
+        this.hoverTip.className = isEstimated ? `ocq-hover-tip is-estimate is-${info.kind}` : 'ocq-hover-tip';
         this.hoverTip.hidden = false;
         const pctX = (hx / VIEW_W) * 100;
         if (pctX > 56) {
@@ -988,10 +1007,18 @@ interface CardRefs {
 function structureSignature(sources: readonly SourceSnapshot[]): string {
   return sources.map((source) => [
     source.name,
-    source.endpoints.join(','),
+    source.labels.join(','),
     source.keyHint ?? '',
     source.windows ? 'ok' : source.error ? 'err' : 'wait',
   ].join('|')).join('||');
+}
+
+function keysSignature(keys: readonly ManagedKeyInfo[]): string {
+  return keys.map((k) => `${k.secret}|${k.label}|${k.keyHint ?? ''}|${k.envDefault ? '1' : '0'}`).join('||');
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export const quotaPanel = {
@@ -1000,14 +1027,19 @@ export const quotaPanel = {
     let snapshot: QuotaSnapshot | null = null;
     let displayMode: DisplayMode = ctx.memo.get<string>('displayMode', 'used') === 'remaining' ? 'remaining' : 'used';
     let busy = false;
+    let keySaving = false;
     let modeEpoch = 0;
     let renderedSig = '';
+    let renderedKeysSig = '';
     let renderedCards: CardRefs[] = [];
+    let keysPanelOpen = false;
+    let keysOpenTouched = false;
+    let editingSecret: string | null = null;
 
     const root = ui.h('div', 'ocq-root');
     ctx.root.append(root);
 
-    // 顶部栏:标题 + 去重/多 Key 提示 + 显示模式切换 + 立即刷新
+    // 顶部栏:标题 + 去重/多 Key 提示 + 显示模式切换 + 密钥管理 + 立即刷新
     const toolbar = ui.h('div', 'ocq-toolbar');
     const head = ui.h('div', 'ocq-head');
     const titleRow = ui.h('div', 'ocq-title-row');
@@ -1031,20 +1063,275 @@ export const quotaPanel = {
       },
     );
 
+    const keysToggleBtn = ui.h('button', 'ocq-keys-btn');
+    keysToggleBtn.type = 'button';
+    const keysToggleLbl = ui.h('span', '', '管理密钥');
+    keysToggleBtn.append(keyIcon(), keysToggleLbl);
+    keysToggleBtn.addEventListener('click', () => {
+      keysOpenTouched = true;
+      keysPanelOpen = !keysPanelOpen;
+      if (!keysPanelOpen) editingSecret = null;
+      syncKeysVisibility();
+    }, { signal: ctx.signal });
+
     const refreshBtn = ui.h('button', 'ocq-refresh');
     refreshBtn.type = 'button';
     const refreshLbl = ui.h('span', '', '立即刷新');
     refreshBtn.append(refreshIcon(), refreshLbl);
     refreshBtn.addEventListener('click', () => void load('read'), { signal: ctx.signal });
 
-    controls.append(modeSwitch.el, refreshBtn);
+    controls.append(modeSwitch.el, keysToggleBtn, refreshBtn);
     toolbar.append(head, controls);
+
+    // 密钥管理卡片(支持新增、改名、更换、移除;实际密钥由框架写入本部署 .env,页面只显示脱敏尾标)
+    const keysPanel = ui.h('section', 'ocq-keys-panel');
+    keysPanel.hidden = true;
+
+    const keysHead = ui.h('div', 'ocq-keys-head');
+    const keysTitleWrap = ui.h('div', 'ocq-keys-title-wrap');
+    keysTitleWrap.append(
+      ui.h('div', 'ocq-keys-title', 'OpenCode Go 密钥管理'),
+      ui.h('div', 'ocq-keys-desc', '密钥由 Cortico 框架隔离保存于本部署 .env（仅本人可读），不写入 config.json；页面只展示脱敏尾标。'),
+    );
+    const keysCloseBtn = ui.h('button', 'ocq-keys-close', '收起');
+    keysCloseBtn.type = 'button';
+    keysCloseBtn.addEventListener('click', () => {
+      keysOpenTouched = true;
+      keysPanelOpen = false;
+      editingSecret = null;
+      syncKeysVisibility();
+    }, { signal: ctx.signal });
+    keysHead.append(keysTitleWrap, keysCloseBtn);
+
+    const keyListBox = ui.h('div', 'ocq-key-list');
+    keyListBox.hidden = true;
+
+    const addForm = ui.h('form', 'ocq-key-form');
+    const addLabelInput = ui.h('input', 'ocq-input ocq-input-name');
+    addLabelInput.type = 'text';
+    addLabelInput.maxLength = 40;
+    addLabelInput.placeholder = '名称（可选，如 主力 Key）';
+    addLabelInput.autocomplete = 'off';
+
+    const addKeyInput = ui.h('input', 'ocq-input ocq-input-secret');
+    addKeyInput.type = 'password';
+    addKeyInput.placeholder = '粘贴 OpenCode Go API Key';
+    addKeyInput.autocomplete = 'new-password';
+    addKeyInput.spellcheck = false;
+
+    const addSubmitBtn = ui.h('button', 'ocq-btn-primary', '添加并查询');
+    addSubmitBtn.type = 'submit';
+
+    addForm.append(addLabelInput, addKeyInput, addSubmitBtn);
+    addForm.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      void handleAddKey();
+    }, { signal: ctx.signal });
+
+    const keyMsg = ui.msgline();
+    keysPanel.append(keysHead, keyListBox, addForm, keyMsg);
 
     const message = ui.msgline();
     const cardsBox = ui.h('div', 'ocq-cards');
     const footer = ui.h('div', 'ocq-footer');
 
-    root.append(toolbar, message, cardsBox, footer);
+    root.append(toolbar, keysPanel, message, cardsBox, footer);
+
+    function showToast(text: string, tone?: 'ok' | 'bad'): void {
+      if (typeof ui.toast === 'function') ui.toast(text, tone);
+    }
+
+    function setKeyNotice(text: string, bad = false): void {
+      keyMsg.textContent = text;
+      keyMsg.classList.toggle('bad', bad);
+    }
+
+    function syncKeysVisibility(): void {
+      const count = snapshot?.managedKeys.length ?? 0;
+      keysPanel.hidden = !keysPanelOpen;
+      keysToggleBtn.classList.toggle('is-open', keysPanelOpen);
+      keysToggleBtn.setAttribute('aria-expanded', String(keysPanelOpen));
+      keysToggleLbl.textContent = count > 0 ? `管理密钥 (${count})` : '添加密钥';
+      keysCloseBtn.hidden = count === 0;
+    }
+
+    function applySnapshot(nextSnap: QuotaSnapshot): void {
+      snapshot = { ...nextSnap, displayMode };
+      if (!keysOpenTouched) {
+        keysPanelOpen = nextSnap.managedKeys.length === 0;
+      }
+      paintAll();
+    }
+
+    async function handleAddKey(): Promise<void> {
+      if (keySaving) return;
+      const rawKey = addKeyInput.value.trim();
+      const rawLabel = addLabelInput.value.trim();
+      if (!rawKey) {
+        setKeyNotice('请先粘贴 OpenCode Go API Key。', true);
+        addKeyInput.focus();
+        return;
+      }
+      keySaving = true;
+      addLabelInput.disabled = true;
+      addKeyInput.disabled = true;
+      addSubmitBtn.disabled = true;
+      addSubmitBtn.textContent = '保存并读取中…';
+      setKeyNotice('');
+      try {
+        const nextSnap = await ctx.invoke<QuotaSnapshot>('addKey', [rawLabel, rawKey]);
+        if (ctx.signal.aborted) return;
+        addLabelInput.value = '';
+        addKeyInput.value = '';
+        keysOpenTouched = true;
+        keysPanelOpen = false;
+        editingSecret = null;
+        applySnapshot(nextSnap);
+        setKeyNotice('');
+        showToast('已安全写入本部署 .env 并刷新额度', 'ok');
+        void ctx.refresh();
+      } catch (error) {
+        if (ctx.signal.aborted) return;
+        const text = errorText(error);
+        setKeyNotice(text, true);
+        showToast(text, 'bad');
+      } finally {
+        keySaving = false;
+        if (!ctx.signal.aborted) {
+          addLabelInput.disabled = false;
+          addKeyInput.disabled = false;
+          addSubmitBtn.disabled = false;
+          addSubmitBtn.textContent = '添加并查询';
+        }
+      }
+    }
+
+    async function handleUpdateKey(secret: string, label: string, newKey: string): Promise<void> {
+      if (keySaving) return;
+      keySaving = true;
+      setKeyNotice('');
+      try {
+        const nextSnap = await ctx.invoke<QuotaSnapshot>('updateKey', [secret, label, newKey]);
+        if (ctx.signal.aborted) return;
+        editingSecret = null;
+        renderedKeysSig = '';
+        applySnapshot(nextSnap);
+        showToast(newKey ? '密钥已更新并刷新额度' : '名称已保存', 'ok');
+        void ctx.refresh();
+      } catch (error) {
+        if (ctx.signal.aborted) return;
+        const text = errorText(error);
+        setKeyNotice(text, true);
+        showToast(text, 'bad');
+      } finally {
+        keySaving = false;
+      }
+    }
+
+    async function handleRemoveKey(info: ManagedKeyInfo): Promise<void> {
+      if (keySaving) return;
+      let confirmed = true;
+      if (typeof ui.confirm === 'function') {
+        confirmed = await ui.confirm({
+          title: `移除密钥「${info.label}」？`,
+          body: `将停止监控环境变量 ${info.secret} 对应的额度（本地历史文件保留，重新添加同把 Key 可自动衔接）。`,
+          danger: true,
+        });
+      }
+      if (!confirmed || ctx.signal.aborted) return;
+      keySaving = true;
+      setKeyNotice('');
+      try {
+        const nextSnap = await ctx.invoke<QuotaSnapshot>('removeKey', [info.secret]);
+        if (ctx.signal.aborted) return;
+        if (editingSecret === info.secret) editingSecret = null;
+        renderedKeysSig = '';
+        if (nextSnap.managedKeys.length === 0) {
+          keysOpenTouched = false;
+        }
+        applySnapshot(nextSnap);
+        showToast(`已移除「${info.label}」`, 'ok');
+        void ctx.refresh();
+      } catch (error) {
+        if (ctx.signal.aborted) return;
+        const text = errorText(error);
+        setKeyNotice(text, true);
+        showToast(text, 'bad');
+      } finally {
+        keySaving = false;
+      }
+    }
+
+    function paintKeyList(keys: readonly ManagedKeyInfo[], force = false): void {
+      const sig = `${keysSignature(keys)}#${editingSecret ?? ''}`;
+      if (!force && sig === renderedKeysSig) return;
+      renderedKeysSig = sig;
+      keyListBox.replaceChildren();
+      keyListBox.hidden = keys.length === 0;
+      if (!keys.length) return;
+
+      for (const info of keys) {
+        const item = ui.h('div', 'ocq-key-row');
+        const main = ui.h('div', 'ocq-key-row-main');
+
+        const infoCol = ui.h('div', 'ocq-key-row-info');
+        infoCol.append(
+          ui.h('span', 'ocq-key-row-label', info.label),
+          ui.h('span', 'ocq-key-row-env', info.secret),
+          info.keyHint
+            ? ui.h('span', 'ocq-key-hint', info.keyHint)
+            : ui.h('span', 'ocq-key-missing', '未读到值'),
+          ...(info.envDefault ? [ui.h('span', 'ocq-key-env-tag', '来自部署 .env')] : []),
+        );
+
+        const acts = ui.h('div', 'ocq-key-row-acts');
+        const isEditing = editingSecret === info.secret;
+        const editBtn = ui.h('button', 'ocq-btn-sm', isEditing ? '取消' : '编辑 / 更换');
+        editBtn.type = 'button';
+        editBtn.addEventListener('click', () => {
+          editingSecret = isEditing ? null : info.secret;
+          setKeyNotice('');
+          paintKeyList(snapshot?.managedKeys ?? [], true);
+        }, { signal: ctx.signal });
+        acts.append(editBtn);
+
+        if (!info.envDefault) {
+          const rmBtn = ui.h('button', 'ocq-btn-sm is-danger', '移除');
+          rmBtn.type = 'button';
+          rmBtn.addEventListener('click', () => void handleRemoveKey(info), { signal: ctx.signal });
+          acts.append(rmBtn);
+        }
+
+        main.append(infoCol, acts);
+        item.append(main);
+
+        if (isEditing) {
+          const editForm = ui.h('form', 'ocq-key-edit');
+          const nameIn = ui.h('input', 'ocq-input ocq-input-name');
+          nameIn.type = 'text';
+          nameIn.maxLength = 40;
+          nameIn.value = info.label;
+          nameIn.placeholder = '显示名称';
+
+          const keyIn = ui.h('input', 'ocq-input ocq-input-secret');
+          keyIn.type = 'password';
+          keyIn.placeholder = '留空不改密钥；粘贴新 API Key 即替换';
+          keyIn.autocomplete = 'new-password';
+          keyIn.spellcheck = false;
+
+          const saveBtn = ui.h('button', 'ocq-btn-primary', '保存');
+          saveBtn.type = 'submit';
+          editForm.append(nameIn, keyIn, saveBtn);
+          editForm.addEventListener('submit', (ev) => {
+            ev.preventDefault();
+            void handleUpdateKey(info.secret, nameIn.value.trim(), keyIn.value.trim());
+          }, { signal: ctx.signal });
+          item.append(editForm);
+        }
+
+        keyListBox.append(item);
+      }
+    }
 
     function setLoading(loading: boolean): void {
       refreshBtn.disabled = loading;
@@ -1083,23 +1370,18 @@ export const quotaPanel = {
       const identRow = ui.h('div', 'ocq-card-title-row');
       const icoWrap = ui.h('span', 'ocq-key-ico');
       icoWrap.append(keyIcon());
-      const displayTitle = source.name === 'manual' && source.endpoints.length === 0
-        ? '手动配置 Key'
-        : source.name;
-      const cardTitle = ui.h('span', 'ocq-card-title', displayTitle);
-      cardTitle.title = displayTitle;
+      const cardTitle = ui.h('span', 'ocq-card-title', source.name);
+      cardTitle.title = source.name;
       const keyHint = ui.h('span', 'ocq-key-hint', source.keyHint ?? '');
       keyHint.hidden = !source.keyHint;
       identRow.append(icoWrap, cardTitle, keyHint);
       ident.append(identRow);
 
-      const showProviders = source.endpoints.length > 1
-        || (source.endpoints.length === 1 && source.endpoints[0] !== source.name);
-      if (showProviders) {
+      if (source.labels.length > 1) {
         const provRow = ui.h('div', 'ocq-providers');
         provRow.append(ui.h('span', 'ocq-providers-label', '共用此 Key'));
-        for (const ep of source.endpoints) {
-          provRow.append(ui.h('span', 'ocq-provider-tag', ep));
+        for (const lbl of source.labels) {
+          provRow.append(ui.h('span', 'ocq-provider-tag', lbl));
         }
         ident.append(provRow);
       }
@@ -1265,15 +1547,15 @@ export const quotaPanel = {
 
     function paintHeaderBadge(snap: QuotaSnapshot): void {
       const keyCount = snap.sources.length;
-      const epCount = snap.totalEndpoints;
-      if (keyCount > 1 && epCount > keyCount) {
-        headBadge.textContent = `${epCount} 个 Provider → ${keyCount} 把独立 Key`;
+      const slotCount = snap.managedKeys.length;
+      if (keyCount > 1 && slotCount > keyCount) {
+        headBadge.textContent = `${slotCount} 个条目 → ${keyCount} 把独立 Key`;
         headBadge.hidden = false;
       } else if (keyCount > 1) {
         headBadge.textContent = `共 ${keyCount} 把独立 Key`;
         headBadge.hidden = false;
-      } else if (keyCount === 1 && epCount > 1) {
-        headBadge.textContent = `${epCount} 个 Provider 共用 1 把 Key`;
+      } else if (keyCount === 1 && slotCount > 1) {
+        headBadge.textContent = `${slotCount} 个条目共用 1 把 Key`;
         headBadge.hidden = false;
       } else {
         headBadge.textContent = '';
@@ -1302,27 +1584,39 @@ export const quotaPanel = {
       });
     }
 
-    function paintEmpty(): void {
-      renderedSig = '__empty__';
+    function paintEmpty(snap: QuotaSnapshot): void {
+      const emptySig = snap.gateway ? '__empty_nokey__' : '__empty_nogw__';
+      if (renderedSig === emptySig) return;
+      renderedSig = emptySig;
       renderedCards = [];
       cardsBox.replaceChildren();
       const empty = ui.h('div', 'ocq-empty');
       const ico = ui.h('div', 'ocq-empty-ico');
       ico.append(keyIcon());
-      empty.append(
-        ico,
-        ui.h('div', 'ocq-empty-title', '还没有可监控的 OpenCode Key'),
-        ui.h('div', 'ocq-empty-desc', '配置任意 OpenCode Go 供应商端点，或在「配置」页签填写网关地址与 API Key 后即可在此查看额度。'),
-      );
+      if (!snap.gateway) {
+        empty.append(
+          ico,
+          ui.h('div', 'ocq-empty-title', '网关地址无效'),
+          ui.h('div', 'ocq-empty-desc', '请在「配置」页签检查 OpenCode 网关地址（默认 https://opencode.ai/inference）。'),
+        );
+      } else {
+        empty.append(
+          ico,
+          ui.h('div', 'ocq-empty-title', '还没有监控中的 OpenCode Go Key'),
+          ui.h('div', 'ocq-empty-desc', '在上方密钥管理区粘贴 OpenCode Go API Key 即可开始监控（也可在本部署 .env 中直接配置 OPENCODE_QUOTA_API_KEY）。'),
+        );
+      }
       cardsBox.append(empty);
     }
 
     function paintAll(): void {
       if (!snapshot) return;
+      syncKeysVisibility();
+      paintKeyList(snapshot.managedKeys);
       paintHeaderBadge(snapshot);
       const { sources, alertAt } = snapshot;
       if (!sources.length) {
-        paintEmpty();
+        paintEmpty(snapshot);
         footer.replaceChildren();
         return;
       }
@@ -1360,7 +1654,7 @@ export const quotaPanel = {
         await ctx.refresh();
       } catch (error) {
         if (ctx.signal.aborted) return;
-        message.textContent = String(error);
+        message.textContent = errorText(error);
         message.classList.add('bad');
       }
     }
@@ -1379,13 +1673,12 @@ export const quotaPanel = {
           ctx.memo.set('displayMode', displayMode);
           modeSwitch.setValue(displayMode);
         }
-        snapshot = { ...nextSnap, displayMode };
-        paintAll();
+        applySnapshot(nextSnap);
         message.textContent = '';
         if (method === 'read') void ctx.refresh();
       } catch (error) {
         if (ctx.signal.aborted) return;
-        message.textContent = String(error);
+        message.textContent = errorText(error);
         message.classList.add('bad');
       } finally {
         busy = false;
